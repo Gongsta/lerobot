@@ -14,6 +14,8 @@
 
 import numpy as np
 
+from lerobot.utils.visualization_utils import visualize_robot
+import time
 
 class RobotKinematics:
     """Robot kinematics using placo library for forward and inverse kinematics."""
@@ -72,6 +74,8 @@ class RobotKinematics:
 
         # Update kinematics
         self.robot.update_kinematics()
+        
+        visualize_robot(self.robot, step=int(time.time()))
 
         # Get the transformation matrix
         return self.robot.get_T_world_frame(self.target_frame_name)

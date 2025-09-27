@@ -94,6 +94,20 @@ from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import init_logging, move_cursor_up
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
 
+# FK and IK stuff
+from lerobot.model.kinematics import RobotKinematics
+from lerobot.processor.converters import (
+    robot_action_observation_to_transition,
+    robot_action_to_transition,
+    transition_to_robot_action,
+)
+
+from lerobot.robots.so100_follower.robot_kinematic_processor import (
+    EEBoundsAndSafety,
+    ForwardKinematicsJointsToEE,
+    InverseKinematicsEEToJoints,
+)
+
 
 @dataclass
 class TeleoperateConfig:
@@ -159,13 +173,14 @@ def teleop_loop(
             log_rerun_data(obs, raw_action)
 
         # Process teleop action through pipeline
-        teleop_action = teleop_action_processor((raw_action, obs))
+        # teleop_action = teleop_action_processor((raw_action, obs))
+        teleop_action = teleop_action_processor(raw_action)
 
         # Process action for robot through pipeline
         robot_action_to_send = robot_action_processor((teleop_action, obs))
 
         # Send processed action to robot (robot_action_processor.to_output should return dict[str, Any])
-        _ = robot.send_action(robot_action_to_send)
+        # _ = robot.send_action(robot_action_to_send)
 
         if display_data:
             # Process robot observation through pipeline
@@ -176,9 +191,12 @@ def teleop_loop(
                 action=teleop_action,
             )
 
-            # print("\n" + "-" * (display_len + 10))
-            # print(f"{'NAME':<{display_len}} | {'NORM':>7}")
-            # # Display the final robot action that was sent
+            print("\n" + "-" * (display_len + 10))
+            print(f"{'NAME':<{display_len}} | {'NORM':>7}")
+            # Display the final robot action that was sent
+            for motor, value in teleop_action.items():
+                print(f"{motor:<{display_len}} | {value*100:>7.2f}")
+            # move_cursor_up(len(teleop_action) + 5)
             # for motor, value in robot_action_to_send.items():
             #     print(f"{motor:<{display_len}} | {value:>7.2f}")
             # move_cursor_up(len(robot_action_to_send) + 5)
@@ -187,50 +205,53 @@ def teleop_loop(
         busy_wait(1 / fps - dt_s)
         loop_s = time.perf_counter() - loop_start
 
-        output_lines: list[str] = []
-        output_lines.append("-" * (display_len + 20))
+        # output_lines: list[str] = []
+        # output_lines.append("-" * (display_len + 20))
 
-        # Actions block
-        output_lines.append("ACTIONS")
-        if unnormalized_action is not None:
-            output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7} | {'RAW':>7}")
-            for motor, value in unnormalized_action.items():
-                raw_val = unnormalized_action.get(motor) if isinstance(unnormalized_action, dict) else None
-                raw_display = f"{int(raw_val):>7}" if isinstance(raw_val, (int, float)) else f"{'N/A':>7}"
-                output_lines.append(f"{motor:<{display_len}} | {value:>7.2f} | {raw_display}")
-        else:
-            output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7}")
-            for motor, value in unnormalized_action.items():
-                output_lines.append(f"{motor:<{display_len}} | {value:>7.2f}")
+        # # Actions block
+        # output_lines.append("ACTIONS")
+        # if unnormalized_action is not None:
+        #     output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7} | {'RAW':>7}")
+        #     for motor, value in raw_action.items():
+        #         raw_val = unnormalized_action.get(motor) if isinstance(unnormalized_action, dict) else None
+        #         raw_display = f"{int(raw_val):>7}" if isinstance(raw_val, (int, float)) else f"{'N/A':>7}"
+        #         output_lines.append(f"{motor:<{display_len}} | {value:>7.2f} | {raw_display}")
+        # else:
+        #     output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7}")
+        #     for motor, value in raw_action.items():
+        #         output_lines.append(f"{motor:<{display_len}} | {value:>7.2f}")
 
-        # Observations block
-        output_lines.append("OBSERVATIONS")
-        if raw_observation is not None:
-            output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7} | {'RAW':>7}")
-            for key, value in obs.items():
-                if not key.endswith(".pos"):
-                    continue
-                raw_val = raw_observation.get(key) if isinstance(raw_observation, dict) else None
-                raw_display = f"{int(raw_val):>7}" if isinstance(raw_val, (int, float)) else f"{'N/A':>7}"
-                output_lines.append(f"{key:<{display_len}} | {value:>7.2f} | {raw_display}")
-        else:
-            output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7}")
-            for key, value in obs.items():
-                if not key.endswith(".pos"):
-                    continue
-                output_lines.append(f"{key:<{display_len}} | {value:>7.2f}")
+        # # Observations block
+        # output_lines.append("OBSERVATIONS")
+        # if raw_observation is not None:
+        #     output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7} | {'RAW':>7}")
+        #     for key, value in obs.items():
+        #         if not key.endswith(".pos"):
+        #             continue
+        #         raw_val = raw_observation.get(key) if isinstance(raw_observation, dict) else None
+        #         raw_display = f"{int(raw_val):>7}" if isinstance(raw_val, (int, float)) else f"{'N/A':>7}"
+        #         output_lines.append(f"{key:<{display_len}} | {value:>7.2f} | {raw_display}")
+        # else:
+        #     output_lines.append(f"{'NAME':<{display_len}} | {'NORM':>7}")
+        #     for key, value in obs.items():
+        #         if not key.endswith(".pos"):
+        #             continue
+        #         output_lines.append(f"{key:<{display_len}} | {value:>7.2f}")
 
-        # Timing line (keep a blank line before time for readability)
-        output_lines.append("")
-        output_lines.append(f"time: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
+        # # Timing line (keep a blank line before time for readability)
+        # output_lines.append("")
+        # output_lines.append(f"time: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
 
-        print("\n".join(output_lines))
+        # print("\n".join(output_lines))
 
         if duration is not None and time.perf_counter() - start >= duration:
             return
 
-        # Move cursor up exactly the number of lines we printed
-        move_cursor_up(len(output_lines))
+        # # Move cursor up exactly the number of lines we printed
+        # move_cursor_up(len(output_lines))
+
+
+
 
 @parser.wrap()
 def teleoperate(cfg: TeleoperateConfig):
@@ -241,7 +262,59 @@ def teleoperate(cfg: TeleoperateConfig):
 
     teleop = make_teleoperator_from_config(cfg.teleop)
     robot = make_robot_from_config(cfg.robot)
+
+    print("bus motor joint names", robot.bus.motors.keys())
+    print("bus motor joint names", teleop.bus.motors.keys())
+
+    # Build pipeline to convert teleop joints to EE action
+    # NOTE: It is highly recommended to use the urdf in the SO-ARM100 repo: https://github.com/TheRobotStudio/SO-ARM100/blob/main/Simulation/SO101/so101_new_calib.urdf
+    robot_kinematics_solver = RobotKinematics(
+        urdf_path="/home/steven/research/low_cost_robot/simulation/low_cost_robot_6dof/low-cost-arm.urdf",
+        target_frame_name="ee_link",
+        # joint_names=list(robot.bus.motors.keys())[:-1],
+        joint_names=['joint1', 'joint2', 'joint3', 'joint4', 'joint5']
+    )
+    # NOTE: It is highly recommended to use the urdf in the SO-ARM100 repo: https://github.com/TheRobotStudio/SO-ARM100/blob/main/Simulation/SO101/so101_new_calib.urdf
+    teleop_kinematics_solver = RobotKinematics(
+        urdf_path="/home/steven/research/low_cost_robot/simulation/low_cost_robot_6dof/low-cost-arm.urdf",
+        target_frame_name="ee_link",
+        # joint_names=list(teleop.bus.motors.keys())[:-1],
+        joint_names=['joint1', 'joint2', 'joint3', 'joint4', 'joint5'],
+    )
+
+
+    teleop_to_ee = RobotProcessorPipeline[RobotAction, RobotAction](
+        steps=[
+            ForwardKinematicsJointsToEE(
+                kinematics=teleop_kinematics_solver, motor_names=list(teleop.bus.motors.keys())[:-1]
+            ),
+        ],
+        to_transition=robot_action_to_transition,
+        to_output=transition_to_robot_action,
+    )
+
+    # build pipeline to convert EE action to robot joints
+    ee_to_robot_joints = RobotProcessorPipeline[tuple[RobotAction, RobotObservation], RobotAction](
+        [
+            EEBoundsAndSafety(
+                end_effector_bounds={"min": [-1.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]},
+                max_ee_step_m=0.10,
+                max_ee_twist_step_rad=0.50,
+            ),
+            InverseKinematicsEEToJoints(
+                kinematics=robot_kinematics_solver,
+                motor_names=list(robot.bus.motors.keys())[:-1],
+                initial_guess_current_joints=False,
+            ),
+        ],
+        to_transition=robot_action_observation_to_transition,
+        to_output=transition_to_robot_action,
+    )
     teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
+    
+    # Use the IK version
+    teleop_action_processor = teleop_to_ee
+    robot_action_processor = ee_to_robot_joints
 
     teleop.connect()
     robot.connect()
