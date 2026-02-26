@@ -87,41 +87,34 @@ def process_single_episode(dataset: LeRobotDataset, episode_idx: int) -> dict:
     start_idx = dataset.meta.episodes[episode_idx]["dataset_from_index"]
     end_idx = dataset.meta.episodes[episode_idx]["dataset_to_index"]
 
-    collected_data: dict[str, list] = {}
-    for idx in range(start_idx, end_idx):
-        item = dataset[idx]
-        for key, value in item.items():
-            if key not in dataset.features:
-                continue
-
-            if key not in collected_data:
-                collected_data[key] = []
-            collected_data[key].append(value)
+    # Load from hf_dataset (parquet) to avoid video decoding
+    if dataset._absolute_to_relative_idx is not None:
+        relative_start = dataset._absolute_to_relative_idx[start_idx]
+        relative_end = dataset._absolute_to_relative_idx[end_idx - 1] + 1
+        episode_data = dataset.hf_dataset[relative_start:relative_end]
+    else:
+        episode_data = dataset.hf_dataset[start_idx:end_idx]
 
     ep_stats = {}
-    for key, data_list in collected_data.items():
-        if dataset.features[key]["dtype"] == "string":
+    for key in dataset.features:
+        if dataset.features[key]["dtype"] in ["video", "image", "string"]:
             continue
 
-        data = torch.stack(data_list).cpu().numpy()
-        if dataset.features[key]["dtype"] in ["image", "video"]:
-            if data.dtype == np.uint8:
-                data = data.astype(np.float32) / 255.0
+        if key not in episode_data:
+            continue
 
-            axes_to_reduce = (0, 2, 3)
-            keepdims = True
+        data = episode_data[key]
+        if isinstance(data, list):
+            data = torch.stack(data).cpu().numpy()
         else:
-            axes_to_reduce = 0
-            keepdims = data.ndim == 1
+            data = data if isinstance(data, np.ndarray) else data.cpu().numpy()
+
+        axes_to_reduce = 0
+        keepdims = data.ndim == 1
 
         ep_stats[key] = get_feature_stats(
             data, axis=axes_to_reduce, keepdims=keepdims, quantile_list=DEFAULT_QUANTILES
         )
-
-        if dataset.features[key]["dtype"] in ["image", "video"]:
-            ep_stats[key] = {
-                k: v if k == "count" else np.squeeze(v, axis=0) for k, v in ep_stats[key].items()
-            }
 
     return ep_stats
 
@@ -134,43 +127,29 @@ def compute_quantile_stats_for_dataset(dataset: LeRobotDataset) -> dict[str, dic
 
     Returns:
         Dictionary containing aggregated statistics with quantiles
-
-    Note:
-        Video decoding operations are not thread-safe, so we process episodes sequentially
-        when video keys are present. For datasets without videos, we use parallel processing
-        with ThreadPoolExecutor for better performance.
     """
     logging.info(f"Computing quantile statistics for dataset with {dataset.num_episodes} episodes")
 
     episode_stats_list = []
-    has_videos = len(dataset.meta.video_keys) > 0
+    max_workers = min(dataset.num_episodes, 16)
 
-    if has_videos:
-        logging.info("Dataset contains video keys - using sequential processing for thread safety")
-        for episode_idx in tqdm(range(dataset.num_episodes), desc="Processing episodes"):
-            ep_stats = process_single_episode(dataset, episode_idx)
-            episode_stats_list.append(ep_stats)
-    else:
-        logging.info("Dataset has no video keys - using parallel processing for better performance")
-        max_workers = min(dataset.num_episodes, 16)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_episode = {
+            executor.submit(process_single_episode, dataset, episode_idx): episode_idx
+            for episode_idx in range(dataset.num_episodes)
+        }
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_episode = {
-                executor.submit(process_single_episode, dataset, episode_idx): episode_idx
-                for episode_idx in range(dataset.num_episodes)
-            }
+        episode_results = {}
+        with tqdm(total=dataset.num_episodes, desc="Processing episodes") as pbar:
+            for future in concurrent.futures.as_completed(future_to_episode):
+                episode_idx = future_to_episode[future]
+                ep_stats = future.result()
+                episode_results[episode_idx] = ep_stats
+                pbar.update(1)
 
-            episode_results = {}
-            with tqdm(total=dataset.num_episodes, desc="Processing episodes") as pbar:
-                for future in concurrent.futures.as_completed(future_to_episode):
-                    episode_idx = future_to_episode[future]
-                    ep_stats = future.result()
-                    episode_results[episode_idx] = ep_stats
-                    pbar.update(1)
-
-        for episode_idx in range(dataset.num_episodes):
-            if episode_idx in episode_results:
-                episode_stats_list.append(episode_results[episode_idx])
+    for episode_idx in range(dataset.num_episodes):
+        if episode_idx in episode_results:
+            episode_stats_list.append(episode_results[episode_idx])
 
     if not episode_stats_list:
         raise ValueError("No episode data found for computing statistics")
