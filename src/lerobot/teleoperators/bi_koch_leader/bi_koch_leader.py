@@ -45,6 +45,7 @@ class BiKochLeader(Teleoperator):
             calibration_dir=config.calibration_dir,
             port=config.left_arm_port,
             intervention_enabled=config.intervention_enabled,  # Left arm holds the keyboard listener
+            inverse_follow=config.inverse_follow,
         )
 
         right_arm_config = KochLeaderConfig(
@@ -52,6 +53,7 @@ class BiKochLeader(Teleoperator):
             calibration_dir=config.calibration_dir,
             port=config.right_arm_port,
             intervention_enabled=False,  # No separate keyboard listener on right arm
+            inverse_follow=config.inverse_follow,
         )
 
         self.left_arm = KochLeader(left_arm_config)

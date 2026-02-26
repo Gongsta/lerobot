@@ -113,10 +113,14 @@ DAgger runs the policy and lets you intervene by pressing **SPACE** on the keybo
 
 ### How it works
 
-1. Policy runs on both follower arms. Leader arms mirror the follower (inverse-follow) so they are already at the right position when you grab them.
+1. Policy runs on both follower arms. By default, leader arms mirror the follower (inverse-follow) so they are already at the right position when you grab them.
 2. Press **SPACE** — leader arm torque disables, you take over both arms simultaneously.
 3. Press **SPACE** again — leader arm torque re-engages, policy resumes. Your correction is saved as a separate episode in the corrections dataset.
 4. At the end of each main episode, all correction fragments are saved in order.
+
+### USB-powered leader arms (no wall adapter)
+
+If your leader arms are powered only through USB (not connected to a wall adapter), enabling torque could draw too much current through the USB port. Add `--teleop.inverse_follow=false` to disable all torque writes to the leader arms. The SPACE-key intervention toggle still works — the only trade-off is that the leader arms won't track the follower during policy execution, so there may be a position jump when you grab them to intervene.
 
 ### Command
 

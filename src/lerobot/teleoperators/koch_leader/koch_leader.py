@@ -242,10 +242,12 @@ class KochLeader(Teleoperator):
         operator grabs the leader to intervene. Only body motors are commanded; the
         gripper stays in its spring-back CURRENT_POSITION mode.
 
+        Skipped when ``config.inverse_follow`` is False (USB-powered leader arms).
+
         Args:
             feedback: Dict mapping keys like "shoulder_pan.pos" to target positions.
         """
-        if not feedback:
+        if not self.config.inverse_follow or not feedback:
             return
 
         goal_positions = {}
@@ -258,11 +260,21 @@ class KochLeader(Teleoperator):
             self.bus.sync_write("Goal_Position", goal_positions)
 
     def enable_torque(self, num_retry: int = 5) -> None:
-        """Enable torque on body motors only (for inverse-follow mode)."""
+        """Enable torque on body motors only (for inverse-follow mode).
+
+        No-op when ``config.inverse_follow`` is False.
+        """
+        if not self.config.inverse_follow:
+            return
         self.bus.enable_torque(_BODY_MOTORS, num_retry=num_retry)
 
     def disable_torque(self) -> None:
-        """Disable torque on body motors only (for human control)."""
+        """Disable torque on body motors only (for human control).
+
+        No-op when ``config.inverse_follow`` is False.
+        """
+        if not self.config.inverse_follow:
+            return
         self.bus.disable_torque(_BODY_MOTORS)
 
     def _start_keyboard_listener(self) -> None:
