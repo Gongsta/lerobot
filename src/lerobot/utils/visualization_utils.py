@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import numbers
 import os
+import xml.etree.ElementTree as ET  # nosec B405
 
 import numpy as np
 import rerun as rr
 import torch
 
-from .constants import OBS_PREFIX, OBS_STR
-import xml.etree.ElementTree as ET
 from lerobot.processor import RobotAction, RobotObservation
 
 from .constants import ACTION, ACTION_PREFIX, OBS_PREFIX, OBS_STR
@@ -126,11 +126,7 @@ def transform_from_pose(p):
     else:
         axis = (w / ang).astype(float)
         # Rodrigues' rotation formula
-        K = np.array([
-            [0, -axis[2], axis[1]],
-            [axis[2], 0, -axis[0]],
-            [-axis[1], axis[0], 0]
-        ])
+        K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
         R = np.eye(3) + np.sin(ang) * K + (1 - np.cos(ang)) * (K @ K)
 
     T = np.eye(4)
@@ -165,26 +161,36 @@ def log_rerun_action_chunk(action_chunk: torch.Tensor, name="action_chunk_", pre
             T_right = transform_from_pose(right_action)
 
             offset_matrix = np.eye(4)
-            offset_matrix[1, 3] = 0.2 # TODO: this is bad should not be hardcoded?
+            offset_matrix[1, 3] = 0.2  # TODO: this is bad should not be hardcoded?
             T_right = apply_offset(T_right, offset_matrix)
 
-            rr.log(f"{prefix}_left/robot/base_link/{name}{i}",
-                   rr.Transform3D(translation=T_left[:3, 3], mat3x3=T_left[:3, :3], axis_length=0.1))
-            rr.log(f"{prefix}_right/robot/base_link/{name}{i}",
-                   rr.Transform3D(translation=T_right[:3, 3], mat3x3=T_right[:3, :3], axis_length=0.1))
+            rr.log(
+                f"{prefix}_left/robot/base_link/{name}{i}",
+                rr.Transform3D(translation=T_left[:3, 3], mat3x3=T_left[:3, :3], axis_length=0.1),
+            )
+            rr.log(
+                f"{prefix}_right/robot/base_link/{name}{i}",
+                rr.Transform3D(translation=T_right[:3, 3], mat3x3=T_right[:3, :3], axis_length=0.1),
+            )
 
         elif action_dim == 7:
             # Single-arm setup: only one EE pose
             single_action = action[:6]  # x, y, z, wx, wy, wz (skip gripper at index 6)
             T = transform_from_pose(single_action)
 
-            rr.log(f"{prefix}/robot/base_link/{name}{i}",
-                   rr.Transform3D(translation=T[:3, 3], mat3x3=T[:3, :3], axis_length=0.1))
+            rr.log(
+                f"{prefix}/robot/base_link/{name}{i}",
+                rr.Transform3D(translation=T[:3, 3], mat3x3=T[:3, :3], axis_length=0.1),
+            )
 
         else:
             # Unsupported action dimension, skip logging with a warning
             import warnings
-            warnings.warn(f"Unsupported action dimension {action_dim} for log_rerun_action_chunk. Expected 7 or 14.")
+
+            warnings.warn(
+                f"Unsupported action dimension {action_dim} for log_rerun_action_chunk. Expected 7 or 14.",
+                stacklevel=2,
+            )
             break
 
 
@@ -199,7 +205,7 @@ def parse_urdf_graph(urdf_path: str):
       - joint_to_child_link: {joint_name: child_link}
       - root_links: [link_name, ...]
     """
-    tree = ET.parse(urdf_path)
+    tree = ET.parse(urdf_path)  # nosec B314
     r = tree.getroot()
 
     links = {e.attrib["name"] for e in r.findall("link")}
@@ -301,10 +307,8 @@ def drive_urdf_with_world_poses(
     # Cache Placo world transforms
     T_world = {}
     for name in placo_robot.frame_names():
-        try:
+        with contextlib.suppress(Exception):
             T_world[name] = apply_offset(placo_robot.get_T_world_frame(name), offset)
-        except Exception:
-            pass
 
     # 1) Roots: write world pose to the root link path(s)
     for root_link in G["root_links"]:

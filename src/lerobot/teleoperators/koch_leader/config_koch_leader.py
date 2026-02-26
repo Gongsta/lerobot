@@ -16,7 +16,6 @@
 
 from dataclasses import dataclass
 
-from ..config import TeleoperatorConfig
 from lerobot.model.kinematics import RobotKinematics
 from lerobot.processor import RobotAction, RobotProcessorPipeline
 from lerobot.processor.converters import (
@@ -24,6 +23,8 @@ from lerobot.processor.converters import (
     transition_to_robot_action,
 )
 from lerobot.robots.so_follower.robot_kinematic_processor import ForwardKinematicsJointsToEE
+
+from ..config import TeleoperatorConfig
 
 
 @TeleoperatorConfig.register_subclass("koch_leader")
@@ -40,7 +41,9 @@ class KochLeaderConfig(TeleoperatorConfig):
     use_degrees: bool = True
 
 
-def make_koch_teleop_processors(teleop, display_data: bool) -> RobotProcessorPipeline[RobotAction, RobotAction]:
+def make_koch_teleop_processors(
+    teleop, display_data: bool
+) -> RobotProcessorPipeline[RobotAction, RobotAction]:
     """Create processor pipeline for single-arm Koch teleoperator.
 
     Converts joint angles from teleoperator to end-effector pose using forward kinematics.
@@ -52,9 +55,9 @@ def make_koch_teleop_processors(teleop, display_data: bool) -> RobotProcessorPip
     Returns:
         Pipeline that converts teleop joint angles to EE pose
     """
-    URDF_PATH = "/home/steven/research/lerobot/assets/koch_follower.urdf"
+    urdf_path = "/home/steven/research/lerobot/assets/koch_follower.urdf"
     teleop_kinematics_solver = RobotKinematics(
-        urdf_path=URDF_PATH,
+        urdf_path=urdf_path,
         target_frame_name="ee_frame",
         joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5"],
     )

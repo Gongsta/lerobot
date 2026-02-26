@@ -16,9 +16,11 @@
 
 from dataclasses import dataclass
 
-from ..config import TeleoperatorConfig
 from lerobot.model.kinematics import RobotKinematics
-from lerobot.processor import RobotProcessorPipeline
+from lerobot.processor import (
+    RobotAction,
+    RobotProcessorPipeline,
+)
 from lerobot.processor.converters import (
     robot_action_observation_to_transition,
     transition_to_robot_action,
@@ -26,10 +28,8 @@ from lerobot.processor.converters import (
 from lerobot.robots.so_follower.robot_kinematic_processor import (
     ForwardKinematicsJointsToEE,
 )
-from lerobot.processor import (
-    RobotAction,
-    RobotProcessorPipeline,
-)
+
+from ..config import TeleoperatorConfig
 
 
 @TeleoperatorConfig.register_subclass("bi_koch_leader")
@@ -39,15 +39,17 @@ class BiKochLeaderConfig(TeleoperatorConfig):
     right_arm_port: str
 
 
-def make_bimanual_koch_teleop_processors(teleop, display_data: bool) -> RobotProcessorPipeline[RobotAction, RobotAction]:
-    URDF_PATH = "/home/steven/research/lerobot/assets/koch_follower.urdf"
+def make_bimanual_koch_teleop_processors(
+    teleop, display_data: bool
+) -> RobotProcessorPipeline[RobotAction, RobotAction]:
+    urdf_path = "/home/steven/research/lerobot/assets/koch_follower.urdf"
     left_teleop_kinematics_solver = RobotKinematics(
-        urdf_path=URDF_PATH,
+        urdf_path=urdf_path,
         target_frame_name="ee_frame",
         joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5"],
     )
     right_teleop_kinematics_solver = RobotKinematics(
-        urdf_path=URDF_PATH,
+        urdf_path=urdf_path,
         target_frame_name="ee_frame",
         joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5"],
     )

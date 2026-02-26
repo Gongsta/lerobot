@@ -23,7 +23,6 @@ import argparse
 import time
 
 import cv2
-import numpy as np
 import rerun as rr
 
 from lerobot.utils.vision_visualizers import make_vision_visualizer
@@ -39,7 +38,9 @@ def main():
         default="facebook/dinov3-vit-base-pretrain-lvd1689m",
         help="DINOv2/v3 model to use (HuggingFace model name)",
     )
-    parser.add_argument("--visualize_attention", action="store_true", help="Visualize attention maps (ViT only)")
+    parser.add_argument(
+        "--visualize_attention", action="store_true", help="Visualize attention maps (ViT only)"
+    )
     parser.add_argument("--fps", type=int, default=10, help="FPS for camera feed")
 
     args = parser.parse_args()

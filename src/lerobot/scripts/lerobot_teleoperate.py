@@ -75,7 +75,10 @@ from pprint import pformat
 
 import rerun as rr
 
-from lerobot.async_inference.bimanual_koch_utils import action_dict_to_tensor, get_bimanual_action_features
+from lerobot.async_inference.bimanual_koch_utils import (
+    compute_current_ee,
+    get_bimanual_action_features,
+)
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
 from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
 from lerobot.configs import parser
@@ -85,12 +88,13 @@ from lerobot.processor import (
     RobotProcessorPipeline,
     make_default_processors,
 )
+from lerobot.processor.processor_factory import make_robot_action_processor, make_teleop_action_processor
 from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_koch_follower,
-    bi_so100_follower,
     bi_openarm_follower,
+    bi_so100_follower,
     bi_so_follower,
     earthrover_mini_plus,
     hope_jr,
@@ -106,8 +110,8 @@ from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
     bi_koch_leader,
-    bi_so100_leader,
     bi_openarm_leader,
+    bi_so100_leader,
     bi_so_leader,
     gamepad,
     homunculus,
@@ -123,12 +127,9 @@ from lerobot.teleoperators import (  # noqa: F401
 from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import init_logging, move_cursor_up
-from lerobot.utils.visualization_utils import init_rerun, log_rerun_data, log_rerun_action_chunk
-from lerobot.utils.vision_visualizers import VisionVisualizer, make_vision_visualizer
+from lerobot.utils.vision_visualizers import VisionVisualizer
+from lerobot.utils.visualization_utils import init_rerun, log_rerun_action_chunk, log_rerun_data
 
-from lerobot.processor.processor_factory import make_robot_action_processor, make_teleop_action_processor
-
-from lerobot.async_inference.bimanual_koch_utils import compute_current_ee
 
 @dataclass
 class TeleoperateConfig:
@@ -211,13 +212,11 @@ def teleop_loop(
         except Exception:
             # Fallback to normalized-only in case a specific teleoperator does not support raw values
             raw_action = teleop.get_action()
-            unnormalized_action = None
         # Retrieve normalized observation and raw values if available
         try:
             obs, raw_observation = robot.get_observation_with_raw()
         except Exception:
             obs = robot.get_observation()
-            raw_observation = None
         if display_data:
             log_rerun_data(obs, raw_action)
 

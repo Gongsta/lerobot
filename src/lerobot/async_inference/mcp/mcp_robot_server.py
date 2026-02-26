@@ -25,35 +25,21 @@ python mcp_robot_server.py \
 ```
 """
 
-import os
 import atexit
 import io
-import logging
 import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import List, Literal, Optional, Union
+from typing import Literal
 
 import draccus
 import numpy as np
 import torch
+from mcp.server.fastmcp import FastMCP, Image
 from PIL import Image as PILImage
 from scipy.spatial.transform import Rotation
 
-from mcp.server.fastmcp import FastMCP, Image
-from lerobot.robots.bi_koch_follower.bi_koch_follower import BiKochFollower
-from lerobot.robots import RobotConfig, make_robot_from_config
-from lerobot.robots.bi_koch_follower.config_bi_koch_follower import (
-    make_bimanual_koch_robot_processors,
-    BiKochFollowerConfig,
-)
-from lerobot.teleoperators.bi_koch_leader.config_bi_koch_leader import make_bimanual_koch_teleop_processors
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
-from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
-from lerobot.async_inference.helpers import (
-    get_logger,
-)
 from lerobot.async_inference.bimanual_koch_utils import (
     INITIAL_EE_POSE,
     action_dict_to_tensor,
@@ -62,7 +48,18 @@ from lerobot.async_inference.bimanual_koch_utils import (
     generate_linear_trajectory,
     get_bimanual_action_features,
 )
-from lerobot.utils.visualization_utils import init_rerun, log_rerun_data, log_rerun_action_chunk
+from lerobot.async_inference.helpers import (
+    get_logger,
+)
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
+from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
+from lerobot.robots import RobotConfig
+from lerobot.robots.bi_koch_follower.bi_koch_follower import BiKochFollower
+from lerobot.robots.bi_koch_follower.config_bi_koch_follower import (
+    make_bimanual_koch_robot_processors,
+)
+from lerobot.teleoperators.bi_koch_leader.config_bi_koch_leader import make_bimanual_koch_teleop_processors
+from lerobot.utils.visualization_utils import init_rerun, log_rerun_action_chunk, log_rerun_data
 
 # Configure logging
 logger = get_logger(__name__)
@@ -163,8 +160,8 @@ def world_to_intuitive_position(x: float, y: float, z: float) -> dict[str, str]:
     # up (intuitive) = Z (world)
     return {
         "forward": f"{-x:.4f}m",  # world -X is forward (intuitive)
-        "right": f"{y:.4f}m",     # world +Y is right
-        "up": f"{z:.4f}m"         # world +Z is up
+        "right": f"{y:.4f}m",  # world +Y is right
+        "up": f"{z:.4f}m",  # world +Z is up
     }
 
 
@@ -180,8 +177,8 @@ def intuitive_to_gripper_translation(forward: float, right: float, up: float) ->
         np.ndarray of [x, y, z] in gripper frame (mm)
     """
     x = -forward  # forward in intuitive = -X in gripper
-    y = -up       # up in intuitive = -Y in gripper
-    z = right     # right in intuitive = +Z in gripper
+    y = -up  # up in intuitive = -Y in gripper
+    z = right  # right in intuitive = +Z in gripper
     return np.array([x, y, z])
 
 
@@ -213,7 +210,7 @@ class LeRobotController:
         self._observation_lock = threading.Lock()
 
         # Debug thread for continuous observation monitoring
-        self._debug_thread: Optional[threading.Thread] = None
+        self._debug_thread: threading.Thread | None = None
         self._debug_running = False
         self._debug_frequency = 10.0  # Hz
 
@@ -314,7 +311,9 @@ class LeRobotController:
         # Get current EE pose (protected by mutex)
         with self._observation_lock:
             observation = self.robot.get_observation()
-        current_ee_tensor = compute_current_ee(observation, self.teleop_action_processor, self.action_features)
+        current_ee_tensor = compute_current_ee(
+            observation, self.teleop_action_processor, self.action_features
+        )
 
         # Get indices for this arm
         x_idx, y_idx, z_idx, wx_idx, wy_idx, wz_idx = self._get_arm_indices(arm)
@@ -372,7 +371,9 @@ class LeRobotController:
         # Get current EE pose (protected by mutex)
         with self._observation_lock:
             observation = self.robot.get_observation()
-        current_ee_tensor = compute_current_ee(observation, self.teleop_action_processor, self.action_features)
+        current_ee_tensor = compute_current_ee(
+            observation, self.teleop_action_processor, self.action_features
+        )
 
         # Get indices for this arm
         x_idx, y_idx, z_idx, wx_idx, wy_idx, wz_idx = self._get_arm_indices(arm)
@@ -411,7 +412,9 @@ class LeRobotController:
         # Get current EE pose (protected by mutex)
         with self._observation_lock:
             observation = self.robot.get_observation()
-        current_ee_tensor = compute_current_ee(observation, self.teleop_action_processor, self.action_features)
+        current_ee_tensor = compute_current_ee(
+            observation, self.teleop_action_processor, self.action_features
+        )
 
         # Update gripper value
         new_ee_tensor = current_ee_tensor.clone()
@@ -440,11 +443,7 @@ class LeRobotController:
         current_ee = compute_current_ee(observation, self.teleop_action_processor, self.action_features)
 
         # Generate smooth trajectory from current to initial position
-        trajectory = generate_linear_trajectory(
-            start=current_ee,
-            target=INITIAL_EE_POSE,
-            num_steps=num_steps
-        )
+        trajectory = generate_linear_trajectory(start=current_ee, target=INITIAL_EE_POSE, num_steps=num_steps)
 
         # Execute trajectory with proper control frequency
         for step_idx, ee_pose in enumerate(trajectory):
@@ -468,12 +467,8 @@ class LeRobotController:
         ee_pose = compute_current_ee(observation, self.teleop_action_processor, self.action_features)
 
         # Transform world frame positions to intuitive frame
-        left_position = world_to_intuitive_position(
-            ee_pose[0].item(), ee_pose[1].item(), ee_pose[2].item()
-        )
-        right_position = world_to_intuitive_position(
-            ee_pose[7].item(), ee_pose[8].item(), ee_pose[9].item()
-        )
+        left_position = world_to_intuitive_position(ee_pose[0].item(), ee_pose[1].item(), ee_pose[2].item())
+        right_position = world_to_intuitive_position(ee_pose[7].item(), ee_pose[8].item(), ee_pose[9].item())
 
         state = {
             "left_arm": {
@@ -545,7 +540,9 @@ class LeRobotController:
                 if elapsed < sleep_time:
                     time.sleep(sleep_time - elapsed)
                 else:
-                    logger.warning(f"Debug thread running slower than {self._debug_frequency} Hz (took {elapsed:.3f}s)")
+                    logger.warning(
+                        f"Debug thread running slower than {self._debug_frequency} Hz (took {elapsed:.3f}s)"
+                    )
 
             except Exception as e:
                 logger.error(f"Error in debug loop: {e}")
@@ -585,8 +582,8 @@ class LeRobotController:
 # Global robot instance
 # -----------------------------------------------------------------------------
 
-_robot_controller: Optional[LeRobotController] = None
-_server_config: Optional[MCPRobotServerConfig] = None
+_robot_controller: LeRobotController | None = None
+_server_config: MCPRobotServerConfig | None = None
 
 
 def get_robot() -> LeRobotController:
@@ -605,6 +602,7 @@ def get_robot() -> LeRobotController:
 
     return _robot_controller
 
+
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
@@ -619,7 +617,7 @@ def _np_to_mcp_image(arr_rgb: np.ndarray) -> Image:
     return Image(data=raw_data, format="jpeg")
 
 
-def get_state_with_images(result_json: dict, is_movement: bool = False) -> List[Union[Image, dict]]:
+def get_state_with_images(result_json: dict, is_movement: bool = False) -> list[Image | dict]:
     """Combine robot state with camera images into a unified response format."""
     robot = get_robot()
     try:

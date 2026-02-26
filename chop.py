@@ -6,6 +6,7 @@ This script simplifies running LeRobot commands by storing commonly used configu
 and providing a clean CLI interface.
 """
 
+import contextlib
 import json
 import os
 import subprocess
@@ -270,7 +271,7 @@ def record(
             # Execute command
             cmd_str = " \\\n  ".join(cmd)
             click.echo(f"\n🚀 Running command:\n{cmd_str}\n")
-            subprocess.run(" ".join(cmd), shell=True, check=True)
+            subprocess.run(" ".join(cmd), shell=True, check=True)  # nosec B602
         finally:
             Path(temp_config_path).unlink(missing_ok=True)
     else:
@@ -310,7 +311,7 @@ def record(
         click.echo(f"\n🚀 Running command:\n{cmd_str}\n")
 
         try:
-            subprocess.run(" ".join(cmd), shell=True, check=True)
+            subprocess.run(" ".join(cmd), shell=True, check=True)  # nosec B602
         except subprocess.CalledProcessError as e:
             click.echo(f"❌ Command failed with exit code {e.returncode}", err=True)
             sys.exit(e.returncode)
@@ -362,7 +363,7 @@ def teleop(display_data, fps, teleop_time_s):
             # Execute command
             cmd_str = " \\\n  ".join(cmd)
             click.echo(f"\n🚀 Running command:\n{cmd_str}\n")
-            subprocess.run(" ".join(cmd), shell=True, check=True)
+            subprocess.run(" ".join(cmd), shell=True, check=True)  # nosec B602
         finally:
             Path(temp_config_path).unlink(missing_ok=True)
     else:
@@ -384,7 +385,7 @@ def teleop(display_data, fps, teleop_time_s):
         click.echo(f"\n🚀 Running command:\n{cmd_str}\n")
 
         try:
-            subprocess.run(" ".join(cmd), shell=True, check=True)
+            subprocess.run(" ".join(cmd), shell=True, check=True)  # nosec B602
         except subprocess.CalledProcessError as e:
             click.echo(f"❌ Command failed with exit code {e.returncode}", err=True)
             sys.exit(e.returncode)
@@ -425,7 +426,7 @@ def replay(dataset_repo_id, dataset_episode):
     click.echo(f"\n🚀 Running command:\n{cmd_str}\n")
 
     try:
-        subprocess.run(" ".join(cmd), shell=True, check=True)
+        subprocess.run(" ".join(cmd), shell=True, check=True)  # nosec B602
     except subprocess.CalledProcessError as e:
         click.echo(f"❌ Command failed with exit code {e.returncode}", err=True)
         sys.exit(e.returncode)
@@ -510,9 +511,7 @@ def identify_ports():
         if test_port(port):
             while True:
                 response = (
-                    click.prompt("\nWhich arm moved? [L/F] (or 'skip')", type=str, default="")
-                    .strip()
-                    .upper()
+                    click.prompt("\nWhich arm moved? [L/F] (or 'skip')", type=str, default="").strip().upper()
                 )
                 if response in ["L", "F"]:
                     port_mapping[response] = port
@@ -675,10 +674,8 @@ def find_cameras():
             click.echo(f"  ✗ Failed to connect to camera: {e}")
             click.echo("  Skipping this camera...")
             if camera:
-                try:
+                with contextlib.suppress(Exception):
                     camera.disconnect()
-                except Exception:
-                    pass
             cv2.destroyAllWindows()
             continue
 
@@ -953,7 +950,7 @@ def train(
     click.echo(f"\n🚀 Running command:\n{cmd_str}\n")
 
     try:
-        subprocess.run(" ".join(cmd), shell=True, check=True)
+        subprocess.run(" ".join(cmd), shell=True, check=True)  # nosec B602
     except subprocess.CalledProcessError as e:
         click.echo(f"❌ Command failed with exit code {e.returncode}", err=True)
         sys.exit(e.returncode)

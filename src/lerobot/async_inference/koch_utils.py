@@ -21,35 +21,39 @@ from lerobot.processor import RobotProcessorPipeline
 
 # Default initial/home position for single-arm Koch robot (in EE space)
 # Format: [x, y, z, wx, wy, wz, gripper]
-INITIAL_EE_POSE_SINGLE = torch.tensor([
-    -1.0168e-01,  # x
-    1.1525e-03,   # y
-    9.4441e-02,   # z
-    -7.4215e-01,  # wx
-    -1.2467e00,   # wy
-    -5.7231e-01,  # wz
-    4.9067e01,    # gripper
-])
+INITIAL_EE_POSE_SINGLE = torch.tensor(
+    [
+        -1.0168e-01,  # x
+        1.1525e-03,  # y
+        9.4441e-02,  # z
+        -7.4215e-01,  # wx
+        -1.2467e00,  # wy
+        -5.7231e-01,  # wz
+        4.9067e01,  # gripper
+    ]
+)
 
 # Default initial/home position for bimanual Koch robot (in EE space)
 # Format: [left_x, left_y, left_z, left_wx, left_wy, left_wz, left_gripper,
 #          right_x, right_y, right_z, right_wx, right_wy, right_wz, right_gripper]
-INITIAL_EE_POSE_BIMANUAL = torch.tensor([
-    -1.0168e-01,  # left_x
-    1.1525e-03,   # left_y
-    9.4441e-02,   # left_z
-    -7.4215e-01,  # left_wx
-    -1.2467e00,   # left_wy
-    -5.7231e-01,  # left_wz
-    4.9067e01,    # left_gripper
-    -8.8268e-02,  # right_x
-    4.3833e-03,   # right_y
-    9.6670e-02,   # right_z
-    -6.4383e-01,  # right_wx
-    -1.2725e00,   # right_wy
-    -5.1562e-01,  # right_wz
-    5.0397e01,    # right_gripper
-])
+INITIAL_EE_POSE_BIMANUAL = torch.tensor(
+    [
+        -1.0168e-01,  # left_x
+        1.1525e-03,  # left_y
+        9.4441e-02,  # left_z
+        -7.4215e-01,  # left_wx
+        -1.2467e00,  # left_wy
+        -5.7231e-01,  # left_wz
+        4.9067e01,  # left_gripper
+        -8.8268e-02,  # right_x
+        4.3833e-03,  # right_y
+        9.6670e-02,  # right_z
+        -6.4383e-01,  # right_wx
+        -1.2725e00,  # right_wy
+        -5.1562e-01,  # right_wz
+        5.0397e01,  # right_gripper
+    ]
+)
 
 # Legacy aliases for backward compatibility
 INITIAL_EE_POSE = INITIAL_EE_POSE_SINGLE
@@ -81,9 +85,7 @@ def action_dict_to_tensor(action_dict: dict[str, float], action_features: list[s
     return torch.tensor([action_dict[key] for key in action_features])
 
 
-def generate_linear_trajectory(
-    start: torch.Tensor, target: torch.Tensor, num_steps: int
-) -> torch.Tensor:
+def generate_linear_trajectory(start: torch.Tensor, target: torch.Tensor, num_steps: int) -> torch.Tensor:
     """Generate a linearly interpolated trajectory from start to target.
 
     Args:
@@ -97,15 +99,13 @@ def generate_linear_trajectory(
     num_dims = start.shape[0]
 
     # Create interpolation weights from 0 to 1
-    t_vals = torch.linspace(
-        0.0, 1.0, steps=num_steps, dtype=start.dtype, device=start.device
-    ).unsqueeze(1)  # (num_steps, 1)
+    t_vals = torch.linspace(0.0, 1.0, steps=num_steps, dtype=start.dtype, device=start.device).unsqueeze(
+        1
+    )  # (num_steps, 1)
 
     # Expand start and target to (num_steps, num_dims)
     start_expanded = start.unsqueeze(0).expand(num_steps, num_dims)
-    target_expanded = (
-        target.to(start.dtype).to(start.device).unsqueeze(0).expand(num_steps, num_dims)
-    )
+    target_expanded = target.to(start.dtype).to(start.device).unsqueeze(0).expand(num_steps, num_dims)
 
     # Linear interpolation: (1 - t) * start + t * target
     interpolated = (1.0 - t_vals) * start_expanded + t_vals * target_expanded

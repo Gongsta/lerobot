@@ -103,13 +103,14 @@ from lerobot.processor import (
     RobotProcessorPipeline,
     make_default_processors,
 )
+from lerobot.processor.processor_factory import make_robot_action_processor, make_teleop_action_processor
 from lerobot.processor.rename_processor import rename_stats
 from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_koch_follower,
-    bi_so100_follower,
     bi_openarm_follower,
+    bi_so100_follower,
     bi_so_follower,
     earthrover_mini_plus,
     hope_jr,
@@ -126,8 +127,8 @@ from lerobot.teleoperators import (  # noqa: F401
     TeleoperatorConfig,
     TeleopEvents,
     bi_koch_leader,
-    bi_so100_leader,
     bi_openarm_leader,
+    bi_so100_leader,
     bi_so_leader,
     homunculus,
     koch_leader,
@@ -154,8 +155,7 @@ from lerobot.utils.utils import (
     init_logging,
     log_say,
 )
-from lerobot.utils.visualization_utils import init_rerun, log_rerun_data, log_rerun_action_chunk
-from lerobot.processor.processor_factory import make_robot_action_processor, make_teleop_action_processor
+from lerobot.utils.visualization_utils import init_rerun, log_rerun_action_chunk, log_rerun_data
 
 
 @dataclass
@@ -361,7 +361,7 @@ def record_loop(
     timestamp = 0
     start_episode_t = time.perf_counter()
     while timestamp < control_time_s:
-        start_time = time.time()
+        time.time()
         print(timestamp, control_time_s)
         start_loop_t = time.perf_counter()
 
@@ -375,7 +375,7 @@ def record_loop(
         # Applies a pipeline to the raw robot observation, default is IdentityProcessor
         obs_processed = robot_observation_processor(obs)
 
-        curr_time = time.time()
+        time.time()
         if policy is not None or dataset is not None or intervention_dataset is not None:
             # Use main dataset features (intervention_dataset has the same features)
             features = dataset.features if dataset is not None else intervention_dataset.features
@@ -440,22 +440,24 @@ def record_loop(
                 teleop.send_feedback(follower_pos)
 
             # Visualize action chunk if the policy supports it and we're using EE action space
-            if display_data and hasattr(policy, 'predict_action_chunk'):
-                uses_ee_actions = any('ee' in key for key in dataset.features.keys())
+            if display_data and hasattr(policy, "predict_action_chunk"):
+                uses_ee_actions = any("ee" in key for key in dataset.features)
                 if uses_ee_actions:
                     try:
                         with (
                             torch.inference_mode(),
                             torch.autocast(device_type=get_safe_torch_device(policy.config.device).type)
-                            if get_safe_torch_device(policy.config.device).type == "cuda" and policy.config.use_amp
+                            if get_safe_torch_device(policy.config.device).type == "cuda"
+                            and policy.config.use_amp
                             else nullcontext(),
                         ):
                             from lerobot.policies.utils import prepare_observation_for_inference
+
                             obs_for_chunk = prepare_observation_for_inference(
                                 observation_frame,
                                 get_safe_torch_device(policy.config.device),
                                 single_task,
-                                robot.robot_type
+                                robot.robot_type,
                             )
                             obs_for_chunk = preprocessor(obs_for_chunk)
                             action_chunk = policy.predict_action_chunk(obs_for_chunk)
@@ -587,6 +589,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         # This ensures the dataset is created with EE action space (which the policy expects)
         # We create a "dummy teleop processor" that's actually just the FK for the robot
         from lerobot.processor.processor_factory import make_fk_processor
+
         teleop_action_processor = make_fk_processor(cfg.robot, robot, cfg.display_data)
 
     robot_action_processor = make_robot_action_processor(cfg.robot, robot, cfg.display_data)
