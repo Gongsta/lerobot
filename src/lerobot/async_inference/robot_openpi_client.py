@@ -26,28 +26,32 @@ python src/lerobot/scripts/server/robot_openpi_client.py \
 ```
 """
 
-from lerobot.async_inference.configs import RobotOpenpiClientConfig
-from openpi_client import image_tools
-from openpi_client import websocket_client_policy
-import numpy as np
 import logging
-import pickle  # nosec
-import threading
 import time
-from collections.abc import Callable
 from dataclasses import asdict
 from pprint import pformat
-from queue import Queue
-from typing import Any
 
 import draccus
-import grpc
 import torch
+from openpi_client import websocket_client_policy
 
-from lerobot.utils.visualization_utils import init_rerun, log_rerun_data, log_rerun_action_chunk
+from lerobot.async_inference import koch_utils
+from lerobot.async_inference.configs import RobotOpenpiClientConfig
+from lerobot.async_inference.constants import SUPPORTED_ROBOTS
+from lerobot.async_inference.helpers import (
+    Action,
+    FPSTracker,
+    Observation,
+    RawObservation,
+    TimedObservation,
+    get_logger,
+    map_robot_keys_to_lerobot_features,
+    raw_observation_to_observation,
+)
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
 from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
-from lerobot.configs.policies import PreTrainedConfig
+from lerobot.configs.types import FeatureType, PolicyFeature
+from lerobot.processor.processor_factory import make_fk_processor, make_robot_action_processor
 from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
@@ -57,24 +61,8 @@ from lerobot.robots import (  # noqa: F401
     so100_follower,
     so101_follower,
 )
-from lerobot.async_inference.constants import SUPPORTED_ROBOTS
-from lerobot.async_inference.helpers import (
-    Action,
-    FPSTracker,
-    Observation,
-    RawObservation,
-    RemotePolicyConfig,
-    TimedObservation,
-    get_logger,
-    map_robot_keys_to_lerobot_features,
-    raw_observation_to_observation,
-)
-from lerobot.configs.types import PolicyFeature, FeatureType
-from lerobot.processor.processor_factory import make_robot_action_processor, make_fk_processor
-
-from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
-from lerobot.async_inference import koch_utils
 from lerobot.utils.control_utils import is_headless
+from lerobot.utils.visualization_utils import init_rerun, log_rerun_action_chunk, log_rerun_data
 
 
 def init_pause_keyboard_listener():
@@ -91,9 +79,7 @@ def init_pause_keyboard_listener():
     events = {"paused": False}
 
     if is_headless():
-        logging.warning(
-            "Headless environment detected. Keyboard pause functionality will not be available."
-        )
+        logging.warning("Headless environment detected. Keyboard pause functionality will not be available.")
         return None, events
 
     # Only import pynput if not in a headless environment
@@ -169,7 +155,6 @@ class RobotOpenpiClient:
         # Get action features using the utility module
         self.action_features = koch_utils.get_action_features(self.robot, self.fk_processor)
 
-
     @property
     def running(self):
         return True
@@ -179,7 +164,9 @@ class RobotOpenpiClient:
         self.robot.disconnect()
         self.logger.debug("Robot disconnected")
 
-    def control_loop(self, task: str, events: dict | None = None, verbose: bool = False) -> tuple[Observation, Action]:
+    def control_loop(
+        self, task: str, events: dict | None = None, verbose: bool = False
+    ) -> tuple[Observation, Action]:
         """Combined function for executing actions and streaming observations
 
         Args:
@@ -199,7 +186,7 @@ class RobotOpenpiClient:
         timestep_count = 0
 
         # Get initial EE pose based on robot type
-        initial_EE = self.initial_ee_pose
+        initial_ee = self.initial_ee_pose
 
         # Set indices to exclude based on robot type
         if self.is_bimanual:
@@ -212,8 +199,8 @@ class RobotOpenpiClient:
             rotation_exclude = [3, 4, 5]
 
         # create a mask (True = add, False = keep original)
-        non_gripper_mask = torch.ones_like(initial_EE, dtype=torch.bool)
-        ee_pose_mask = torch.ones_like(initial_EE, dtype=torch.bool)
+        non_gripper_mask = torch.ones_like(initial_ee, dtype=torch.bool)
+        ee_pose_mask = torch.ones_like(initial_ee, dtype=torch.bool)
         ee_pose_mask[gripper_exclude] = False
         ee_pose_mask[rotation_exclude] = False
         non_gripper_mask[gripper_exclude] = False
@@ -278,7 +265,7 @@ class RobotOpenpiClient:
 
             log_rerun_action_chunk(action_chunk_world)
             count = 0
-            action_chunk_velocities =  torch.zeros_like(action_chunk_world)
+            action_chunk_velocities = torch.zeros_like(action_chunk_world)
             action_chunk_velocities[1:] = action_chunk_world[1:] - action_chunk_world[:-1]
 
             for action_idx in range(action_chunk_world.shape[0]):
@@ -298,13 +285,14 @@ class RobotOpenpiClient:
 
                 largest_left_arm_delta = torch.abs(action_chunk_velocities[action_idx][:3]).max()
                 if largest_left_arm_delta > 0.05:
-                    breakpoint()
                     self.logger.info(f"Large action of {largest_left_arm_delta}, sending twice to reach it")
                     _performed_action = self.robot.send_action(processed_action)
 
                 # Dynamically adjust sleep time to maintain desired control frequency
                 action_elapsed_time = time.perf_counter() - action_start_time
-                time.sleep(max(0, self.config.environment_dt / self.config.speed_multiplier - action_elapsed_time))
+                time.sleep(
+                    max(0, self.config.environment_dt / self.config.speed_multiplier - action_elapsed_time)
+                )
                 # The code below slows things down a lot. We need a better way to compute this
                 # raw_observation = self.robot.get_observation()
                 # current_ee = self._compute_current_ee(raw_observation)
@@ -320,7 +308,6 @@ class RobotOpenpiClient:
                 #     print("Sending action again reach it before trying to get to next action chunk")
                 #     _performed_action = self.robot.send_action(processed_action)
                 #     time.sleep(self.config.environment_dt / 10)
-
 
             if count == self.config.actions_per_chunk:
                 task_completed = True
@@ -341,7 +328,13 @@ class RobotOpenpiClient:
                 )
 
             # Dynamically adjust sleep time to maintain the desired control frequency
-            time.sleep(max(0, self.config.environment_dt / self.config.speed_multiplier - (time.perf_counter() - control_loop_start)))
+            time.sleep(
+                max(
+                    0,
+                    self.config.environment_dt / self.config.speed_multiplier
+                    - (time.perf_counter() - control_loop_start),
+                )
+            )
 
         return _captured_observation, _performed_action
 

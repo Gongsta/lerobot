@@ -14,13 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-import time
-
-from lerobot.utils.visualization_utils import visualize_robot, parse_urdf_graph
 
 from lerobot.configs.types import FeatureType, PipelineFeatureType, PolicyFeature
 from lerobot.model.kinematics import RobotKinematics
@@ -30,12 +28,12 @@ from lerobot.processor import (
     ProcessorStep,
     ProcessorStepRegistry,
     RobotAction,
-    RobotObservation,
     RobotActionProcessorStep,
     RobotObservation,
     TransitionKey,
 )
 from lerobot.utils.rotation import Rotation
+from lerobot.utils.visualization_utils import parse_urdf_graph, visualize_robot
 
 
 @ProcessorStepRegistry.register("ee_reference_and_delta")
@@ -259,6 +257,7 @@ def angular_diff(a, b):
     diff = (a - b + 180) % 360 - 180
     return abs(diff)
 
+
 @ProcessorStepRegistry.register("inverse_kinematics_ee_to_joints")
 @dataclass
 class InverseKinematicsEEToJoints(RobotActionProcessorStep):
@@ -296,10 +295,9 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
         """Initialize rerun logging if display_data is enabled."""
         if self.display_data and not self._rerun_initialized:
             import rerun as rr
+
             rr.log_file_from_path(
-                self.kinematics.urdf_path,
-                entity_path_prefix=self.entity_path_prefix,
-                static=True
+                self.kinematics.urdf_path, entity_path_prefix=self.entity_path_prefix, static=True
             )
             # Parse URDF graph for visualization
             self._urdf_graph = parse_urdf_graph(self.kinematics.urdf_path)
@@ -313,7 +311,7 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
         wy = action.pop(f"{self.prefix}ee.wy")
         wz = action.pop(f"{self.prefix}ee.wz")
         gripper_pos = action.pop(f"{self.prefix}ee.gripper_pos")
-        
+
         print(f"x: {x}, y: {y}, z: {z}, wx: {wx}, wy: {wy}, wz: {wz}, gripper_pos: {gripper_pos}")
 
         if None in (x, y, z, wx, wy, wz, gripper_pos):
@@ -326,7 +324,11 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
             raise ValueError("Joints observation is require for computing robot kinematics")
 
         q_raw = np.array(
-            [float(v) for k, v in observation.items() if isinstance(k, str) and k.endswith(".pos") and k.startswith(f"{self.prefix}")],
+            [
+                float(v)
+                for k, v in observation.items()
+                if isinstance(k, str) and k.endswith(".pos") and k.startswith(f"{self.prefix}")
+            ],
             dtype=float,
         )
         if q_raw is None or len(q_raw) == 0:
@@ -348,10 +350,10 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
         if self._first_solve:
             print("IK first solve, trying multiple times to get an optimal initial solution")
             self.q_curr = q_raw
-        for attempt_no in range(num_tries): # Multiple first attempts to get a solution
+        for attempt_no in range(num_tries):  # Multiple first attempts to get a solution
             if attempt_no > 0:
                 print(f"IK retry attempt {attempt_no} to get an optimal initial solution")
-                self.q_curr = q_raw # Reset to current joints for subsequent tries
+                self.q_curr = q_raw  # Reset to current joints for subsequent tries
             # Try more for the first time
             if self._first_solve:
                 for _ in range(num_tries):
@@ -388,15 +390,16 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
         return action
 
     def verify_solution_within_joint_limits(self, action: RobotAction, observation: RobotObservation) -> bool:
-        for motor_name in self.motor_names[:-3]: # exclude gripper and wrist roll and wrist flex
+        for motor_name in self.motor_names[:-3]:  # exclude gripper and wrist roll and wrist flex
             full_motor_name = f"{motor_name}.pos"
             target_pos = action[full_motor_name]
             current_pos = observation[full_motor_name]
             if angular_diff(target_pos, current_pos) > self.threshold_deg:
-                print(f"JointSafety: commanded {full_motor_name} is too large, likely issue with your IK solution: target:{target_pos}, current:{current_pos}, threshold: {self.threshold_deg}")
+                print(
+                    f"JointSafety: commanded {full_motor_name} is too large, likely issue with your IK solution: target:{target_pos}, current:{current_pos}, threshold: {self.threshold_deg}"
+                )
                 return False
         return True
-
 
     def transform_features(
         self, features: dict[PipelineFeatureType, dict[str, PolicyFeature]]
@@ -525,7 +528,9 @@ class ForwardKinematicsJointsToEEObservation(ObservationProcessorStep):
     gripper_name: str
 
     def observation(self, observation: RobotObservation) -> RobotObservation:
-        return compute_forward_kinematics_joints_to_ee(observation, self.kinematics, self.motor_names, self.gripper_name)
+        return compute_forward_kinematics_joints_to_ee(
+            observation, self.kinematics, self.motor_names, self.gripper_name
+        )
 
     def transform_features(
         self, features: dict[PipelineFeatureType, dict[str, PolicyFeature]]
@@ -579,17 +584,18 @@ class ForwardKinematicsJointsToEEAction(RobotActionProcessorStep):
         """Initialize rerun logging if display_data is enabled."""
         if self.display_data and not self._rerun_initialized:
             import rerun as rr
+
             rr.log_file_from_path(
-                self.kinematics.urdf_path,
-                entity_path_prefix=self.entity_path_prefix,
-                static=True
+                self.kinematics.urdf_path, entity_path_prefix=self.entity_path_prefix, static=True
             )
             # Parse URDF graph for visualization
             self._urdf_graph = parse_urdf_graph(self.kinematics.urdf_path)
             self._rerun_initialized = True
 
     def action(self, action: RobotAction) -> RobotAction:
-        result = compute_forward_kinematics_joints_to_ee(action, self.kinematics, self.motor_names, self.gripper_name)
+        result = compute_forward_kinematics_joints_to_ee(
+            action, self.kinematics, self.motor_names, self.gripper_name
+        )
 
         # Visualize the robot if enabled
         if self.display_data and self._urdf_graph is not None:

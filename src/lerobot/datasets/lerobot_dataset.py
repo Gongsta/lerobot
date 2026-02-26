@@ -1121,13 +1121,16 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         except Exception as e:
             # Log the error and skip to a random different sample
-            import av
             import random
+
+            import av
 
             if isinstance(e, av.error.InvalidDataError):
                 logging.warning(f"Video corruption at index {idx}: {e}. Skipping to random sample.")
             else:
-                logging.warning(f"Error loading sample {idx}: {type(e).__name__}: {e}. Skipping to random sample.")
+                logging.warning(
+                    f"Error loading sample {idx}: {type(e).__name__}: {e}. Skipping to random sample."
+                )
 
             # Skip to a random different index
             new_idx = random.randint(0, len(self) - 1)

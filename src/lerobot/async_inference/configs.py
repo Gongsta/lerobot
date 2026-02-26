@@ -210,6 +210,7 @@ class RobotOpenpiClientConfig:
     This class defines all configurable parameters for the RobotClient,
     including network connection, policy settings, and control behavior.
     """
+
     # Robot configuration (for CLI usage - robot instance will be created from this)
     robot: RobotConfig = field(metadata={"help": "Robot configuration"})
 
@@ -225,12 +226,15 @@ class RobotOpenpiClientConfig:
 
     # Control behavior configuration
     fps: int = field(default=DEFAULT_FPS, metadata={"help": "Frames per second"})
-    speed_multiplier: float = field(default=1.0, metadata={"help": "Speed multiplier for policy execution (e.g., 0.5 = 50% speed = 2x slower, 2.0 = 200% speed = 2x faster)"})
+    speed_multiplier: float = field(
+        default=1.0,
+        metadata={
+            "help": "Speed multiplier for policy execution (e.g., 0.5 = 50% speed = 2x slower, 2.0 = 200% speed = 2x faster)"
+        },
+    )
 
     # Device configuration
     device: str = field(default="cpu", metadata={"help": "Device for policy inference"})
-
-
 
     @property
     def environment_dt(self) -> float:
@@ -250,7 +254,6 @@ class RobotOpenpiClientConfig:
 
         if self.speed_multiplier <= 0:
             raise ValueError(f"speed_multiplier must be positive, got {self.speed_multiplier}")
-
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "RobotClientConfig":
