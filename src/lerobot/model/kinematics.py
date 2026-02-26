@@ -114,7 +114,6 @@ class RobotKinematics:
         self.solver.solve(True)
         self.robot.update_kinematics()
 
-
         # Extract joint positions
         joint_pos_rad = []
         for joint_name in self.joint_names:

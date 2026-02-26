@@ -24,6 +24,7 @@ from lerobot.motors.dynamixel import (
     OperatingMode,
 )
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
+from lerobot.utils.errors import DeviceNotConnectedError
 
 from ..teleoperator import Teleoperator
 from .config_koch_leader import KochLeaderConfig
@@ -53,7 +54,9 @@ class KochLeader(Teleoperator):
                 "elbow_flex": Motor(3, "xl330-m077", norm_mode_body),
                 "wrist_flex": Motor(4, "xl330-m077", norm_mode_body),
                 "wrist_roll": Motor(5, "xl330-m077", norm_mode_body),
-                "gripper": Motor(6, "xl330-m077", MotorNormMode.RANGE_0_100), # Always use the percentage for the grippers
+                "gripper": Motor(
+                    6, "xl330-m077", MotorNormMode.RANGE_0_100
+                ),  # Always use the percentage for the grippers
             },
             calibration=self.calibration,
         )
@@ -91,7 +94,9 @@ class KochLeader(Teleoperator):
         self.bus.disable_torque()
         if self.calibration:
             # Calibration file exists, ask user whether to use it or run new calibration
-            logger.info(f"Calibration exists, writing calibration file associated with the id {self.id} to the motors")
+            logger.info(
+                f"Calibration exists, writing calibration file associated with the id {self.id} to the motors"
+            )
             self.bus.write_calibration(self.calibration)
             return
         logger.info(f"\nRunning calibration of {self}")
@@ -172,7 +177,9 @@ class KochLeader(Teleoperator):
                     new_offset = current_offsets[motor] - (k * res)
                     if new_offset != current_offsets[motor]:
                         self.bus.write("Homing_Offset", motor, new_offset, normalize=False)
-                        logger.info(f"({self.config.id}): Wrapped offset for motor '{motor}' from {current_offsets[motor]} to {new_offset} to keep it in [0, {res-1}]")
+                        logger.info(
+                            f"({self.config.id}): Wrapped offset for motor '{motor}' from {current_offsets[motor]} to {new_offset} to keep it in [0, {res - 1}]"
+                        )
         # Refresh in-memory calibration to reflect device state
         new_cal = self.bus.read_calibration()
         self.calibration = new_cal

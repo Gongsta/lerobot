@@ -47,16 +47,12 @@ from pprint import pformat
 
 from lerobot.configs import parser
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.processor import (
-    make_default_robot_action_processor,
-)
-from lerobot.robots.bi_koch_follower.config_bi_koch_follower import make_bimanual_koch_robot_processors
 from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_koch_follower,
-    bi_so100_follower,
     bi_openarm_follower,
+    bi_so100_follower,
     bi_so_follower,
     earthrover_mini_plus,
     hope_jr,
@@ -68,6 +64,7 @@ from lerobot.robots import (  # noqa: F401
     so_follower,
     unitree_g1,
 )
+from lerobot.robots.bi_koch_follower.config_bi_koch_follower import make_bimanual_koch_robot_processors
 from lerobot.utils.constants import ACTION
 from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.robot_utils import precise_sleep
@@ -107,7 +104,7 @@ def replay(cfg: ReplayConfig):
     robot = make_robot_from_config(cfg.robot)
     dataset = LeRobotDataset(cfg.dataset.repo_id, root=cfg.dataset.root, episodes=[cfg.dataset.episode])
 
-    robot_action_processor=make_bimanual_koch_robot_processors(robot, True)
+    robot_action_processor = make_bimanual_koch_robot_processors(robot, True)
 
     # Filter dataset to only include frames from the specified episode since episodes are chunked in dataset V3.0
     episode_frames = dataset.hf_dataset.filter(lambda x: x["episode_index"] == cfg.dataset.episode)

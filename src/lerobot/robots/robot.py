@@ -15,13 +15,13 @@
 import abc
 import builtins
 from pathlib import Path
+from typing import Any
 
 import draccus
 
 from lerobot.motors import MotorCalibration
 from lerobot.processor import RobotAction, RobotObservation
 from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, ROBOTS
-from typing import Any
 
 from .config import RobotConfig
 

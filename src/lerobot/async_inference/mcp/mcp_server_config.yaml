@@ -4,7 +4,7 @@ robot:
   right_arm_port: /dev/follower-right
   id: bimanual_follower
   cameras:
-    top: 
+    top:
       type: opencv
       index_or_path: /dev/camera-top
       width: 640
@@ -22,4 +22,3 @@ robot:
       width: 640
       height: 480
       fps: 30
-

@@ -17,21 +17,19 @@
 from dataclasses import dataclass, field
 
 from lerobot.cameras import CameraConfig
-
 from lerobot.model.kinematics import RobotKinematics
-from lerobot.processor import RobotProcessorPipeline
-from lerobot.processor.converters import robot_action_observation_to_transition, transition_to_robot_action
-from lerobot.robots.so_follower.robot_kinematic_processor import (
-    EEBoundsAndSafety,
-    InverseKinematicsEEToJoints,
-)
 from lerobot.processor import (
     RobotAction,
     RobotObservation,
     RobotProcessorPipeline,
 )
-from ..config import RobotConfig
+from lerobot.processor.converters import robot_action_observation_to_transition, transition_to_robot_action
+from lerobot.robots.so_follower.robot_kinematic_processor import (
+    EEBoundsAndSafety,
+    InverseKinematicsEEToJoints,
+)
 
+from ..config import RobotConfig
 
 MAX_RELATIVE_TARGET_DEFAULT = {
     "shoulder_pan": 10.0,
@@ -68,14 +66,14 @@ class BiKochFollowerConfig(RobotConfig):
 def make_bimanual_koch_robot_processors(robot, display_data: bool) -> RobotProcessorPipeline:
     # Build pipeline to convert teleop joints to EE action
     # PATH="assets/koch_follower.urdf"
-    URDF_PATH = "/home/steven/research/lerobot/assets/koch_follower.urdf"
+    urdf_path = "/home/steven/research/lerobot/assets/koch_follower.urdf"
     left_robot_kinematics_solver = RobotKinematics(
-        urdf_path=URDF_PATH,
+        urdf_path=urdf_path,
         target_frame_name="ee_frame",
         joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5"],
     )
     right_robot_kinematics_solver = RobotKinematics(
-        urdf_path=URDF_PATH,
+        urdf_path=urdf_path,
         target_frame_name="ee_frame",
         joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5"],
     )
@@ -88,13 +86,13 @@ def make_bimanual_koch_robot_processors(robot, display_data: bool) -> RobotProce
     ee_to_robot_joints = RobotProcessorPipeline[tuple[RobotAction, RobotObservation], RobotAction](
         [
             EEBoundsAndSafety(
-                end_effector_bounds={"min": [-0.25, -0.2, 0.0], "max": [0., 0.2, 0.4]},
+                end_effector_bounds={"min": [-0.25, -0.2, 0.0], "max": [0.0, 0.2, 0.4]},
                 max_ee_step_m=0.15,
                 # max_ee_twist_step_rad=0.50,
                 prefix="left_",
             ),
             EEBoundsAndSafety(
-                end_effector_bounds={"min": [-0.25, -0.2, 0.0], "max": [0., 0.2, 0.4]},
+                end_effector_bounds={"min": [-0.25, -0.2, 0.0], "max": [0.0, 0.2, 0.4]},
                 max_ee_step_m=0.15,
                 # max_ee_twist_step_rad=0.50,
                 prefix="right_",

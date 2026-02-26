@@ -16,16 +16,16 @@
 
 """Vision feature visualizers for debugging and analysis."""
 
-from abc import ABC, abstractmethod
 from typing import Protocol
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from PIL import Image
 
 try:
     import rerun as rr
+
     RERUN_AVAILABLE = True
 except ImportError:
     RERUN_AVAILABLE = False
@@ -94,14 +94,18 @@ class DINOv2Visualizer:
             param.requires_grad = False
 
         # Get model config
-        self.is_vit = hasattr(self.model.config, 'patch_size')
+        self.is_vit = hasattr(self.model.config, "patch_size")
         if self.is_vit:
             self.patch_size = self.model.config.patch_size
             self.hidden_size = self.model.config.hidden_size
         else:
             # ConvNeXt models don't have patch_size, will extract spatial features differently
             self.patch_size = None
-            self.hidden_size = self.model.config.hidden_sizes[-1] if hasattr(self.model.config, 'hidden_sizes') else self.model.config.num_channels
+            self.hidden_size = (
+                self.model.config.hidden_sizes[-1]
+                if hasattr(self.model.config, "hidden_sizes")
+                else self.model.config.num_channels
+            )
 
         # PCA components (will be fit on first batch)
         self.pca_components = None
@@ -154,10 +158,7 @@ class DINOv2Visualizer:
         # Resize PCA visualization to match input image size
         h, w = pil_image.size[1], pil_image.size[0]  # PIL is (W, H)
         pca_vis_resized = F.interpolate(
-            pca_vis.unsqueeze(0),
-            size=(h, w),
-            mode='bilinear',
-            align_corners=False
+            pca_vis.unsqueeze(0), size=(h, w), mode="bilinear", align_corners=False
         ).squeeze(0)
 
         result = {
@@ -175,10 +176,7 @@ class DINOv2Visualizer:
             # Create attention visualization (average over heads, focus on CLS token)
             attn_vis = self._create_attention_visualization(attention_maps, grid_size)
             attn_vis_resized = F.interpolate(
-                attn_vis.unsqueeze(0).unsqueeze(0),
-                size=(h, w),
-                mode='bilinear',
-                align_corners=False
+                attn_vis.unsqueeze(0).unsqueeze(0), size=(h, w), mode="bilinear", align_corners=False
             ).squeeze()
             result["attention_visualization"] = attn_vis_resized.cpu()
 
@@ -296,7 +294,7 @@ class DINOv2Visualizer:
         """
         import matplotlib.pyplot as plt
 
-        cmap = plt.get_cmap('jet')
+        cmap = plt.get_cmap("jet")
         colored = cmap(heatmap)  # (H, W, 4) RGBA
         rgb = (colored[..., :3] * 255).astype(np.uint8)
         return rgb
@@ -310,10 +308,7 @@ class IdentityVisualizer:
         pass
 
 
-def make_vision_visualizer(
-    visualizer_type: str | None = None,
-    **kwargs
-) -> VisionVisualizer:
+def make_vision_visualizer(visualizer_type: str | None = None, **kwargs) -> VisionVisualizer:
     """Factory function for vision visualizers.
 
     Args:
@@ -333,7 +328,9 @@ def make_vision_visualizer(
         >>> # DINOv3 ViT
         >>> viz = make_vision_visualizer("dinov2", model_name="facebook/dinov3-vit-base-pretrain-lvd1689m")
         >>> # DINOv3 ConvNeXt
-        >>> viz = make_vision_visualizer("dinov2", model_name="facebook/dinov3-convnext-tiny-pretrain-lvd1689m")
+        >>> viz = make_vision_visualizer(
+        ...     "dinov2", model_name="facebook/dinov3-convnext-tiny-pretrain-lvd1689m"
+        ... )
         >>> # DINOv2
         >>> viz = make_vision_visualizer("dinov2", model_name="facebook/dinov2-base")
     """
