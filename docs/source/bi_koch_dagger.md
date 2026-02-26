@@ -138,7 +138,7 @@ lerobot-record \
     --teleop.right_arm_port=$LEADER_RIGHT_PORT \
     --teleop.id=bimanual_leader \
     --teleop.intervention_enabled=true \
-    --dataset.repo_id=${HF_USER}/koch-tshirt-dagger-main \
+    --dataset.repo_id=${HF_USER}/eval_koch-tshirt-dagger-main \
     --dataset.single_task="Fold the t-shirt and put it in the bin" \
     --dataset.num_episodes=10 \
     --dataset.episode_time_s=30 \
