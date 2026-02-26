@@ -40,6 +40,9 @@ class KochLeaderConfig(TeleoperatorConfig):
     # Set to `True` for backward compatibility with previous policies/dataset. Use degrees for FK / IK.
     use_degrees: bool = True
 
+    # Enable intervention mode (press SPACE to toggle between policy and teleop during recording)
+    intervention_enabled: bool = False
+
 
 def make_koch_teleop_processors(
     teleop, display_data: bool
