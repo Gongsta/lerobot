@@ -11,10 +11,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import click
-
 
 # Configuration directory
 CONFIG_DIR = Path.home() / ".config" / "chop"
@@ -27,7 +26,7 @@ def ensure_config_dir():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_config(config_file: Path) -> Dict[str, Any]:
+def load_config(config_file: Path) -> dict[str, Any]:
     """Load configuration from JSON file."""
     if not config_file.exists():
         return {}
@@ -35,7 +34,7 @@ def load_config(config_file: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
-def save_config(config_file: Path, config: Dict[str, Any]):
+def save_config(config_file: Path, config: dict[str, Any]):
     """Save configuration to JSON file."""
     ensure_config_dir()
     with open(config_file, "w") as f:
@@ -43,7 +42,7 @@ def save_config(config_file: Path, config: Dict[str, Any]):
     click.echo(f"✓ Configuration saved to {config_file}")
 
 
-def build_cli_args(prefix: str, config: Dict[str, Any]) -> List[str]:
+def build_cli_args(prefix: str, config: dict[str, Any]) -> list[str]:
     """
     Build CLI arguments from a config dictionary.
 
@@ -62,15 +61,15 @@ def build_cli_args(prefix: str, config: Dict[str, Any]) -> List[str]:
             # Handle nested dictionaries (like cameras)
             json_str = json.dumps(value)
             # Properly quote the JSON string for shell execution
-            args.append(f'--{prefix}.{key}={shlex.quote(json_str)}')
+            args.append(f"--{prefix}.{key}={shlex.quote(json_str)}")
         elif isinstance(value, bool):
-            args.append(f'--{prefix}.{key}={str(value).lower()}')
+            args.append(f"--{prefix}.{key}={str(value).lower()}")
         elif value is not None:
-            args.append(f'--{prefix}.{key}={value}')
+            args.append(f"--{prefix}.{key}={value}")
     return args
 
 
-def check_dataset_exists(repo_id: str, root: Optional[str] = None) -> bool:
+def check_dataset_exists(repo_id: str, root: str | None = None) -> bool:
     """
     Check if a dataset already exists at the expected location.
 
@@ -99,9 +98,9 @@ def check_dataset_exists(repo_id: str, root: Optional[str] = None) -> bool:
 
 @click.group(invoke_without_command=True)
 @click.pass_context
-@click.option('--set-robot', is_flag=True, help='Configure robot settings (so101_follower)')
-@click.option('--set-teleop', is_flag=True, help='Configure teleop settings (so101_leader)')
-@click.option('--show-config', is_flag=True, help='Show current configuration')
+@click.option("--set-robot", is_flag=True, help="Configure robot settings (so101_follower)")
+@click.option("--set-teleop", is_flag=True, help="Configure teleop settings (so101_leader)")
+@click.option("--show-config", is_flag=True, help="Show current configuration")
 def cli(ctx, set_robot, set_teleop, show_config):
     """Chop - Centralized configuration manager for LeRobot commands."""
 
@@ -173,23 +172,37 @@ def display_config():
 
 
 @cli.command()
-@click.option('--dataset.repo_id', 'dataset_repo_id', required=True, help='Dataset repository ID')
-@click.option('--dataset.num_episodes', 'dataset_num_episodes', type=int, help='Number of episodes')
-@click.option('--dataset.single_task', 'dataset_single_task', help='Single task description')
-@click.option('--dataset.episode_time_s', 'dataset_episode_time_s', type=int, help='Episode duration in seconds')
-@click.option('--dataset.reset_time_s', 'dataset_reset_time_s', type=int, help='Reset duration in seconds')
-@click.option('--policy.path', 'policy_path', help='Path to pretrained policy for testing')
-@click.option('--policy.device', 'policy_device', default='mps', help='Device for policy inference (default: mps)')
-@click.option('--intervention_repo_id', help='Record intervention fragments to a separate dataset')
-@click.option('--display_data', is_flag=True, help='Display data during recording')
-@click.argument('extra_args', nargs=-1, type=click.UNPROCESSED)
-def record(dataset_repo_id, dataset_num_episodes, dataset_single_task, dataset_episode_time_s,
-           dataset_reset_time_s, policy_path, policy_device, intervention_repo_id, display_data, extra_args):
+@click.option("--dataset.repo_id", "dataset_repo_id", required=True, help="Dataset repository ID")
+@click.option("--dataset.num_episodes", "dataset_num_episodes", type=int, help="Number of episodes")
+@click.option("--dataset.single_task", "dataset_single_task", help="Single task description")
+@click.option(
+    "--dataset.episode_time_s", "dataset_episode_time_s", type=int, help="Episode duration in seconds"
+)
+@click.option("--dataset.reset_time_s", "dataset_reset_time_s", type=int, help="Reset duration in seconds")
+@click.option("--policy.path", "policy_path", help="Path to pretrained policy for testing")
+@click.option(
+    "--policy.device", "policy_device", default="mps", help="Device for policy inference (default: mps)"
+)
+@click.option("--intervention_repo_id", help="Record intervention fragments to a separate dataset")
+@click.option("--display_data", is_flag=True, help="Display data during recording")
+@click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
+def record(
+    dataset_repo_id,
+    dataset_num_episodes,
+    dataset_single_task,
+    dataset_episode_time_s,
+    dataset_reset_time_s,
+    policy_path,
+    policy_device,
+    intervention_repo_id,
+    display_data,
+    extra_args,
+):
     """Record episodes with the robot. Automatically resumes if dataset exists.
 
     Pass additional args after -- (e.g., -- --dataset.push_to_hub=false)."""
-    import tempfile
     import shlex
+    import tempfile
 
     robot_config = load_config(ROBOT_CONFIG_FILE)
     teleop_config = load_config(TELEOP_CONFIG_FILE)
@@ -218,16 +231,12 @@ def record(dataset_repo_id, dataset_num_episodes, dataset_single_task, dataset_e
     cmd = ["lerobot-record"]
 
     # If cameras are present, use config file (Draccus can't parse nested ChoiceRegistry from CLI)
-    has_cameras = 'cameras' in robot_config and robot_config['cameras']
+    has_cameras = "cameras" in robot_config and robot_config["cameras"]
 
     if has_cameras:
         # Create temp config file with all configs
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, prefix='chop_record_') as f:
-            config = {
-                "robot": robot_config,
-                "teleop": teleop_config,
-                "dataset": {"repo_id": dataset_repo_id}
-            }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, prefix="chop_record_") as f:
+            config = {"robot": robot_config, "teleop": teleop_config, "dataset": {"repo_id": dataset_repo_id}}
 
             if dataset_num_episodes is not None:
                 config["dataset"]["num_episodes"] = dataset_num_episodes
@@ -273,7 +282,7 @@ def record(dataset_repo_id, dataset_num_episodes, dataset_single_task, dataset_e
         if dataset_num_episodes is not None:
             cmd.append(f"--dataset.num_episodes={dataset_num_episodes}")
         if dataset_single_task:
-            cmd.append(f'--dataset.single_task={shlex.quote(dataset_single_task)}')
+            cmd.append(f"--dataset.single_task={shlex.quote(dataset_single_task)}")
         if dataset_episode_time_s is not None:
             cmd.append(f"--dataset.episode_time_s={dataset_episode_time_s}")
         if dataset_reset_time_s is not None:
@@ -308,9 +317,9 @@ def record(dataset_repo_id, dataset_num_episodes, dataset_single_task, dataset_e
 
 
 @cli.command()
-@click.option('--display_data', is_flag=True, help='Display data during teleoperation')
-@click.option('--fps', type=int, help='Frames per second')
-@click.option('--teleop_time_s', type=float, help='Teleoperation duration in seconds')
+@click.option("--display_data", is_flag=True, help="Display data during teleoperation")
+@click.option("--fps", type=int, help="Frames per second")
+@click.option("--teleop_time_s", type=float, help="Teleoperation duration in seconds")
 def teleop(display_data, fps, teleop_time_s):
     """Teleoperate the robot."""
     import tempfile
@@ -330,15 +339,12 @@ def teleop(display_data, fps, teleop_time_s):
     cmd = ["lerobot-teleoperate"]
 
     # If cameras are present, use config file (Draccus can't parse nested ChoiceRegistry from CLI)
-    has_cameras = 'cameras' in robot_config and robot_config['cameras']
+    has_cameras = "cameras" in robot_config and robot_config["cameras"]
 
     if has_cameras:
         # Create temp config file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, prefix='chop_teleop_') as f:
-            config = {
-                "robot": robot_config,
-                "teleop": teleop_config
-            }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, prefix="chop_teleop_") as f:
+            config = {"robot": robot_config, "teleop": teleop_config}
 
             if display_data:
                 config["display_data"] = True
@@ -385,8 +391,10 @@ def teleop(display_data, fps, teleop_time_s):
 
 
 @cli.command()
-@click.option('--dataset.repo_id', 'dataset_repo_id', required=True, help='Dataset repository ID')
-@click.option('--dataset.episode', 'dataset_episode', type=int, required=True, help='Episode number to replay')
+@click.option("--dataset.repo_id", "dataset_repo_id", required=True, help="Dataset repository ID")
+@click.option(
+    "--dataset.episode", "dataset_episode", type=int, required=True, help="Episode number to replay"
+)
 def replay(dataset_repo_id, dataset_episode):
     """Replay an episode on the robot (cameras not needed for replay)."""
 
@@ -402,12 +410,12 @@ def replay(dataset_repo_id, dataset_episode):
     # Build robot args excluding cameras
     # Cameras are optional for replay and can't be passed via CLI due to Draccus ChoiceRegistry limitations
     for key, value in robot_config.items():
-        if key == 'cameras':
+        if key == "cameras":
             continue  # Skip cameras
         elif isinstance(value, bool):
-            cmd.append(f'--robot.{key}={str(value).lower()}')
+            cmd.append(f"--robot.{key}={str(value).lower()}")
         elif value is not None:
-            cmd.append(f'--robot.{key}={value}')
+            cmd.append(f"--robot.{key}={value}")
 
     cmd.append(f"--dataset.repo_id={dataset_repo_id}")
     cmd.append(f"--dataset.episode={dataset_episode}")
@@ -432,7 +440,9 @@ def identify_ports():
         from lerobot.motors import Motor, MotorNormMode
         from lerobot.motors.feetech import FeetechMotorsBus
     except ImportError:
-        click.echo("❌ Could not import lerobot modules. Make sure you're in the lerobot environment.", err=True)
+        click.echo(
+            "❌ Could not import lerobot modules. Make sure you're in the lerobot environment.", err=True
+        )
         sys.exit(1)
 
     def test_port(port: str):
@@ -481,6 +491,7 @@ def identify_ports():
 
     # Scan for available ports (macOS style)
     import glob
+
     available_ports = sorted(glob.glob("/dev/tty.usbmodem*"))
     if not available_ports:
         # Try Linux-style ports
@@ -498,8 +509,11 @@ def identify_ports():
     for port in available_ports:
         if test_port(port):
             while True:
-                response = click.prompt(f"\nWhich arm moved? [L/F] (or 'skip')",
-                                      type=str, default="").strip().upper()
+                response = (
+                    click.prompt("\nWhich arm moved? [L/F] (or 'skip')", type=str, default="")
+                    .strip()
+                    .upper()
+                )
                 if response in ["L", "F"]:
                     port_mapping[response] = port
                     click.echo(f"  ✓ Recorded: {response} -> {port}")
@@ -554,7 +568,9 @@ def find_cameras():
         from lerobot.cameras.realsense.camera_realsense import RealSenseCamera
         from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
     except ImportError:
-        click.echo("❌ Could not import lerobot modules. Make sure you're in the lerobot environment.", err=True)
+        click.echo(
+            "❌ Could not import lerobot modules. Make sure you're in the lerobot environment.", err=True
+        )
         sys.exit(1)
 
     click.echo("=" * 60)
@@ -597,8 +613,8 @@ def find_cameras():
         cam_id = cam_info.get("id")
         cam_name = cam_info.get("name", f"{cam_type} {cam_id}")
 
-        click.echo(f"\n{'='*60}")
-        click.echo(f"Camera #{i+1}: {cam_name}")
+        click.echo(f"\n{'=' * 60}")
+        click.echo(f"Camera #{i + 1}: {cam_name}")
         click.echo(f"  Type: {cam_type}")
         click.echo(f"  ID: {cam_id}")
 
@@ -620,18 +636,32 @@ def find_cameras():
             camera.connect(warmup=True)
 
             # Show live video feed
-            window_name = f"Camera #{i+1}: {cam_name} - Press any key to close"
-            click.echo(f"  ✓ Showing live video feed. Press any key in the video window to close.")
+            window_name = f"Camera #{i + 1}: {cam_name} - Press any key to close"
+            click.echo("  ✓ Showing live video feed. Press any key in the video window to close.")
 
             while True:
                 image_array = camera.read()
                 # Convert RGB to BGR for OpenCV display
                 image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
                 # Add text overlay
-                cv2.putText(image_bgr, f"Camera #{i+1}: {cam_name}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(image_bgr, "Press any key to close", (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+                cv2.putText(
+                    image_bgr,
+                    f"Camera #{i + 1}: {cam_name}",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    image_bgr,
+                    "Press any key to close",
+                    (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 255),
+                    1,
+                )
                 cv2.imshow(window_name, image_bgr)
 
                 # Check for key press (wait 30ms)
@@ -656,11 +686,11 @@ def find_cameras():
         click.echo(f"\n  Available roles: {', '.join(available_roles)}")
         click.echo("  (You can also enter a new custom role name)")
         while True:
-            response = click.prompt(
-                "  Assign this camera to a role (or 'skip' to skip)",
-                type=str,
-                default=""
-            ).strip().lower()
+            response = (
+                click.prompt("  Assign this camera to a role (or 'skip' to skip)", type=str, default="")
+                .strip()
+                .lower()
+            )
 
             if response == "skip" or response == "":
                 click.echo("  Skipped")
@@ -692,7 +722,7 @@ def find_cameras():
                     "index_or_path": index,
                     "width": cam_info.get("default_stream_profile", {}).get("width", 640),
                     "height": cam_info.get("default_stream_profile", {}).get("height", 480),
-                    "fps": int(cam_info.get("default_stream_profile", {}).get("fps", 30))
+                    "fps": int(cam_info.get("default_stream_profile", {}).get("fps", 30)),
                 }
             elif cam_type == "RealSense":
                 use_depth = click.confirm("  Enable depth for this camera?", default=True)
@@ -702,7 +732,7 @@ def find_cameras():
                     "width": cam_info.get("default_stream_profile", {}).get("width", 640),
                     "height": cam_info.get("default_stream_profile", {}).get("height", 480),
                     "fps": cam_info.get("default_stream_profile", {}).get("fps", 30),
-                    "use_depth": use_depth
+                    "use_depth": use_depth,
                 }
 
             camera_mapping[response] = cam_config
@@ -713,14 +743,16 @@ def find_cameras():
             break
 
     # Display results
-    click.echo(f"\n{'='*60}")
+    click.echo(f"\n{'=' * 60}")
     click.echo("CAMERA CONFIGURATION")
     click.echo("=" * 60)
 
     if camera_mapping:
         click.echo("\nAssigned cameras:")
         for role, config in camera_mapping.items():
-            click.echo(f"  {role}: {config['type']} ({config.get('serial_number_or_name') or config.get('index_or_path')})")
+            click.echo(
+                f"  {role}: {config['type']} ({config.get('serial_number_or_name') or config.get('index_or_path')})"
+            )
 
         # Update robot configuration
         robot_config = load_config(ROBOT_CONFIG_FILE)
@@ -742,13 +774,13 @@ def find_cameras():
 
 
 @cli.command(name="edit-config")
-@click.argument('config_type', type=click.Choice(['robot', 'teleop']))
+@click.argument("config_type", type=click.Choice(["robot", "teleop"]))
 def edit_config(config_type):
     """Edit configuration files directly."""
 
     config_map = {
-        'robot': ROBOT_CONFIG_FILE,
-        'teleop': TELEOP_CONFIG_FILE,
+        "robot": ROBOT_CONFIG_FILE,
+        "teleop": TELEOP_CONFIG_FILE,
     }
 
     config_file = config_map[config_type]
@@ -759,7 +791,7 @@ def edit_config(config_type):
         save_config(config_file, {})
 
     # Open in default editor
-    editor = os.environ.get('EDITOR', 'vim')
+    editor = os.environ.get("EDITOR", "vim")
     try:
         subprocess.run([editor, str(config_file)], check=True)
         click.echo(f"✓ Configuration updated: {config_file}")
@@ -769,39 +801,58 @@ def edit_config(config_type):
 
 
 @cli.command()
-@click.option('--dataset.repo_id', 'dataset_repo_id', help='Dataset repository ID (not used when resuming)')
-@click.option('--policy.type', 'policy_type', help='Policy type (e.g., act, pi05, smolvla)')
-@click.option('--policy.repo_id', 'policy_repo_id', help='Policy repository ID for saving')
-@click.option('--output_dir', help='Override output directory (default: outputs/{policy_type}_{dataset_name})')
-@click.option('--batch_size', type=int, help='Training batch size')
-@click.option('--steps', type=int, help='Number of training steps')
-@click.option('--save_freq', type=int, help='Checkpoint save frequency')
-@click.option('--policy.device', 'policy_device', default='cuda', help='Device for training (default: cuda)')
-@click.option('--wandb/--no-wandb', 'wandb_enable', default=True, help='Enable/disable wandb logging (default: enabled)')
-@click.option('--policy.pretrained_path', 'policy_pretrained_path', help='Path to pretrained policy checkpoint')
-@click.argument('extra_args', nargs=-1, type=click.UNPROCESSED)
-def train(dataset_repo_id, policy_type, policy_repo_id, output_dir, batch_size, steps, save_freq,
-          policy_device, wandb_enable, policy_pretrained_path, extra_args):
+@click.option("--dataset.repo_id", "dataset_repo_id", help="Dataset repository ID (not used when resuming)")
+@click.option("--policy.type", "policy_type", help="Policy type (e.g., act, pi05, smolvla)")
+@click.option("--policy.repo_id", "policy_repo_id", help="Policy repository ID for saving")
+@click.option(
+    "--output_dir", help="Override output directory (default: outputs/{policy_type}_{dataset_name})"
+)
+@click.option("--batch_size", type=int, help="Training batch size")
+@click.option("--steps", type=int, help="Number of training steps")
+@click.option("--save_freq", type=int, help="Checkpoint save frequency")
+@click.option("--policy.device", "policy_device", default="cuda", help="Device for training (default: cuda)")
+@click.option(
+    "--wandb/--no-wandb", "wandb_enable", default=True, help="Enable/disable wandb logging (default: enabled)"
+)
+@click.option(
+    "--policy.pretrained_path", "policy_pretrained_path", help="Path to pretrained policy checkpoint"
+)
+@click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
+def train(
+    dataset_repo_id,
+    policy_type,
+    policy_repo_id,
+    output_dir,
+    batch_size,
+    steps,
+    save_freq,
+    policy_device,
+    wandb_enable,
+    policy_pretrained_path,
+    extra_args,
+):
     """Train a policy on a dataset. Pass through additional args like --policy.n_obs_steps, --peft.method_type, etc."""
 
     # Determine output directory first
     if output_dir:
         output_path = Path(output_dir).expanduser()
     elif policy_type and dataset_repo_id:
-        dataset_name = dataset_repo_id.split('/')[-1]
+        dataset_name = dataset_repo_id.split("/")[-1]
         output_dir = f"outputs/{policy_type}_{dataset_name}"
         output_path = Path(output_dir).expanduser()
     else:
         # Check if we can infer from output_dir in extra_args
         output_path = None
         for arg in extra_args:
-            if arg.startswith('--output_dir='):
-                output_dir = arg.split('=', 1)[1]
+            if arg.startswith("--output_dir="):
+                output_dir = arg.split("=", 1)[1]
                 output_path = Path(output_dir).expanduser()
                 break
 
         if not output_path:
-            click.echo("❌ Either --output_dir or both --policy.type and --dataset.repo_id are required", err=True)
+            click.echo(
+                "❌ Either --output_dir or both --policy.type and --dataset.repo_id are required", err=True
+            )
             sys.exit(1)
 
     # Check if output directory exists and has checkpoints
@@ -823,11 +874,12 @@ def train(dataset_repo_id, policy_type, policy_repo_id, output_dir, batch_size, 
                 if choice == "r":
                     resume_mode = True
                     config_path = train_config
-                    click.echo(f"✓ Resuming training from checkpoint")
+                    click.echo("✓ Resuming training from checkpoint")
                     click.echo(f"   Config: {config_path}")
                     break
                 elif choice == "d":
                     import shutil
+
                     click.echo(f"Deleting directory: {output_path}")
                     shutil.rmtree(output_path)
                     click.echo("✓ Directory deleted, starting fresh")

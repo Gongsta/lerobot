@@ -209,7 +209,9 @@ class SOLeader(Teleoperator):
             Dict with TeleopEvents keys indicating current intervention state.
         """
         return {
-            TeleopEvents.IS_INTERVENTION: self._intervention_active if self.config.intervention_enabled else False,
+            TeleopEvents.IS_INTERVENTION: self._intervention_active
+            if self.config.intervention_enabled
+            else False,
             TeleopEvents.TERMINATE_EPISODE: False,
             TeleopEvents.SUCCESS: False,
             TeleopEvents.RERECORD_EPISODE: False,
