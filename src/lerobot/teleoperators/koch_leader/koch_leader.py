@@ -16,6 +16,7 @@
 
 import logging
 import time
+from typing import Any
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.dynamixel import (
@@ -27,7 +28,11 @@ from lerobot.utils.decorators import check_if_already_connected, check_if_not_co
 from lerobot.utils.errors import DeviceNotConnectedError
 
 from ..teleoperator import Teleoperator
+from ..utils import TeleopEvents
 from .config_koch_leader import KochLeaderConfig
+
+# Body motors only -- gripper stays in CURRENT_POSITION spring-back mode and must not be torque-toggled
+_BODY_MOTORS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +66,18 @@ class KochLeader(Teleoperator):
             calibration=self.calibration,
         )
 
+        # Intervention state (toggled by SPACE key when intervention_enabled=True)
+        self._intervention_active = False
+        self._keyboard_listener = None
+
     @property
     def action_features(self) -> dict[str, type]:
         return {f"{motor}.pos": float for motor in self.bus.motors}
 
     @property
     def feedback_features(self) -> dict[str, type]:
-        return {}
+        """Features that can be sent as feedback (motor positions for inverse-follow)."""
+        return {f"{motor}.pos": float for motor in self.bus.motors}
 
     @property
     def is_connected(self) -> bool:
@@ -85,6 +95,9 @@ class KochLeader(Teleoperator):
         self._wrap_full_turn_offsets_once()
         self.configure()
         logger.info(f"{self} connected.")
+
+        if self.config.intervention_enabled:
+            self._start_keyboard_listener()
 
     @property
     def is_calibrated(self) -> bool:
@@ -222,10 +235,87 @@ class KochLeader(Teleoperator):
         return action_norm, action_raw
 
     def send_feedback(self, feedback: dict[str, float]) -> None:
-        # TODO(rcadene, aliberts): Implement force feedback
-        raise NotImplementedError
+        """Command leader body motors to given positions (for inverse-follow).
+
+        During policy execution the follower's joint positions are sent here so the
+        leader mirrors the robot's movements. This ensures a smooth handoff when the
+        operator grabs the leader to intervene. Only body motors are commanded; the
+        gripper stays in its spring-back CURRENT_POSITION mode.
+
+        Skipped when ``config.inverse_follow`` is False (USB-powered leader arms).
+
+        Args:
+            feedback: Dict mapping keys like "shoulder_pan.pos" to target positions.
+        """
+        if not self.config.inverse_follow or not feedback:
+            return
+
+        goal_positions = {}
+        for motor_name in _BODY_MOTORS:
+            pos_key = f"{motor_name}.pos"
+            if pos_key in feedback:
+                goal_positions[motor_name] = feedback[pos_key]
+
+        if goal_positions:
+            self.bus.sync_write("Goal_Position", goal_positions)
+
+    def enable_torque(self, num_retry: int = 5) -> None:
+        """Enable torque on body motors only (for inverse-follow mode).
+
+        No-op when ``config.inverse_follow`` is False.
+        """
+        if not self.config.inverse_follow:
+            return
+        self.bus.enable_torque(_BODY_MOTORS, num_retry=num_retry)
+
+    def disable_torque(self) -> None:
+        """Disable torque on body motors only (for human control).
+
+        No-op when ``config.inverse_follow`` is False.
+        """
+        if not self.config.inverse_follow:
+            return
+        self.bus.disable_torque(_BODY_MOTORS)
+
+    def _start_keyboard_listener(self) -> None:
+        """Start background keyboard listener for SPACE-key intervention toggle."""
+        from pynput import keyboard
+
+        def on_press(key):
+            if key == keyboard.Key.space:
+                self._intervention_active = not self._intervention_active
+                if self._intervention_active:
+                    logger.info("INTERVENTION ON - Switched to teleop mode")
+                else:
+                    logger.info("INTERVENTION OFF - Returning to policy mode")
+
+        self._keyboard_listener = keyboard.Listener(on_press=on_press)
+        self._keyboard_listener.start()
+        logger.info("Intervention enabled: Press SPACE to toggle between policy and teleop")
+
+    def get_teleop_events(self) -> dict[str, Any]:
+        """Return intervention status for the recording loop.
+
+        Returns:
+            Dict keyed by TeleopEvents indicating current intervention state.
+        """
+        return {
+            TeleopEvents.IS_INTERVENTION: self._intervention_active
+            if self.config.intervention_enabled
+            else False,
+            TeleopEvents.TERMINATE_EPISODE: False,
+            TeleopEvents.SUCCESS: False,
+            TeleopEvents.RERECORD_EPISODE: False,
+        }
+
+    def reset_intervention(self) -> None:
+        """Reset intervention state at the start of a new episode."""
+        self._intervention_active = False
 
     @check_if_not_connected
     def disconnect(self) -> None:
+        if self._keyboard_listener is not None:
+            self._keyboard_listener.stop()
+            self._keyboard_listener = None
         self.bus.disconnect()
         logger.info(f"{self} disconnected.")

@@ -16,11 +16,13 @@
 
 import logging
 from functools import cached_property
+from typing import Any
 
 from lerobot.teleoperators.koch_leader.config_koch_leader import KochLeaderConfig
 from lerobot.teleoperators.koch_leader.koch_leader import KochLeader
 
 from ..teleoperator import Teleoperator
+from ..utils import TeleopEvents
 from .config_bi_koch_leader import BiKochLeaderConfig
 
 logger = logging.getLogger(__name__)
@@ -42,12 +44,16 @@ class BiKochLeader(Teleoperator):
             id=f"{config.id}_left" if config.id else None,
             calibration_dir=config.calibration_dir,
             port=config.left_arm_port,
+            intervention_enabled=config.intervention_enabled,  # Left arm holds the keyboard listener
+            inverse_follow=config.inverse_follow,
         )
 
         right_arm_config = KochLeaderConfig(
             id=f"{config.id}_right" if config.id else None,
             calibration_dir=config.calibration_dir,
             port=config.right_arm_port,
+            intervention_enabled=False,  # No separate keyboard listener on right arm
+            inverse_follow=config.inverse_follow,
         )
 
         self.left_arm = KochLeader(left_arm_config)
@@ -61,7 +67,9 @@ class BiKochLeader(Teleoperator):
 
     @cached_property
     def feedback_features(self) -> dict[str, type]:
-        return {}
+        return {f"left_{motor}.pos": float for motor in self.left_arm.bus.motors} | {
+            f"right_{motor}.pos": float for motor in self.right_arm.bus.motors
+        }
 
     @property
     def is_connected(self) -> bool:
@@ -127,6 +135,24 @@ class BiKochLeader(Teleoperator):
             self.left_arm.send_feedback(left_feedback)
         if right_feedback:
             self.right_arm.send_feedback(right_feedback)
+
+    def enable_torque(self, num_retry: int = 5) -> None:
+        """Enable torque on body motors of both arms (for inverse-follow mode)."""
+        self.left_arm.enable_torque(num_retry=num_retry)
+        self.right_arm.enable_torque(num_retry=num_retry)
+
+    def disable_torque(self) -> None:
+        """Disable torque on body motors of both arms (for human control)."""
+        self.left_arm.disable_torque()
+        self.right_arm.disable_torque()
+
+    def get_teleop_events(self) -> dict[str, Any]:
+        """Forward intervention events from the left arm (which holds the keyboard listener)."""
+        return self.left_arm.get_teleop_events()
+
+    def reset_intervention(self) -> None:
+        """Reset intervention state for a new episode."""
+        self.left_arm.reset_intervention()
 
     def disconnect(self) -> None:
         self.left_arm.disconnect()
