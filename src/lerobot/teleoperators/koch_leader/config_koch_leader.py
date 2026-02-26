@@ -43,6 +43,11 @@ class KochLeaderConfig(TeleoperatorConfig):
     # Enable intervention mode (press SPACE to toggle between policy and teleop during recording)
     intervention_enabled: bool = False
 
+    # When True, leader motors track the follower during policy execution (smooth handoff).
+    # Set to False if the leader arm is USB-powered only (no wall adapter) to avoid
+    # drawing torque current through the USB port.
+    inverse_follow: bool = True
+
 
 def make_koch_teleop_processors(
     teleop, display_data: bool
