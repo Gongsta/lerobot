@@ -803,7 +803,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         if not is_headless() and listener:
             listener.stop()
 
-        if cfg.dataset.push_to_hub:
+        if dataset and cfg.dataset.push_to_hub:
             dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
 
         if intervention_dataset and cfg.dataset.push_to_hub:
