@@ -17,6 +17,7 @@
 import logging
 import time
 from functools import cached_property
+from typing import Any
 
 from lerobot.cameras.utils import make_cameras_from_configs
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
@@ -101,6 +102,7 @@ class KochFollower(Robot):
         for cam in self.cameras.values():
             cam.connect()
 
+        self._wrap_full_turn_offsets_once()
         self.configure()
         logger.info(f"{self} connected.")
 
@@ -112,13 +114,11 @@ class KochFollower(Robot):
         self.bus.disable_torque()
         if self.calibration:
             # Calibration file exists, ask user whether to use it or run new calibration
-            user_input = input(
-                f"Press ENTER to use provided calibration file associated with the id {self.id}, or type 'c' and press ENTER to run calibration: "
+            logger.info(
+                f"Calibration exists, writing calibration file associated with the id {self.id} to the motors"
             )
-            if user_input.strip().lower() != "c":
-                logger.info(f"Writing calibration file associated with the id {self.id} to the motors")
-                self.bus.write_calibration(self.calibration)
-                return
+            self.bus.write_calibration(self.calibration)
+            return
         logger.info(f"\nRunning calibration of {self}")
         for motor in self.bus.motors:
             self.bus.write("Operating_Mode", motor, OperatingMode.EXTENDED_POSITION.value)
@@ -175,6 +175,35 @@ class KochFollower(Robot):
             self.bus.write("Position_I_Gain", "elbow_flex", 0)
             self.bus.write("Position_D_Gain", "elbow_flex", 600)
 
+    def _wrap_full_turn_offsets_once(self) -> None:
+        """
+        Adjust Homing_Offset by integer multiples of resolution so Present_Position is wrapped into [0, res-1]
+        for full-turn joints. This is a one-time alignment at startup; we do not modify readings afterwards.
+        """
+        full_turn_motors = ["shoulder_pan", "wrist_roll"]
+        # Ensure EEPROM writes are allowed
+        with self.bus.torque_disabled(full_turn_motors):
+            raw_by_name = self.bus.sync_read("Present_Position", normalize=False)
+            current_offsets = self.bus.sync_read("Homing_Offset", normalize=False)
+            for motor in full_turn_motors:
+                if motor not in raw_by_name:
+                    continue
+                model = self.bus.motors[motor].model
+                res = self.bus.model_resolution_table[model]
+                present = raw_by_name[motor]
+                k = present // res
+                if k != 0:
+                    new_offset = current_offsets[motor] - (k * res)
+                    if new_offset != current_offsets[motor]:
+                        self.bus.write("Homing_Offset", motor, new_offset, normalize=False)
+                        logger.info(
+                            f"Wrapped {motor} offset from {current_offsets[motor]} to {new_offset} to keep it in [0, {res - 1}]"
+                        )
+        # Refresh in-memory calibration to reflect device state
+        new_cal = self.bus.read_calibration()
+        self.calibration = new_cal
+        self.bus.calibration = new_cal
+
     def setup_motors(self) -> None:
         for motor in reversed(self.bus.motors):
             input(f"Connect the controller board to the '{motor}' motor only and press enter.")
@@ -198,6 +227,32 @@ class KochFollower(Robot):
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
 
         return obs_dict
+
+    @check_if_not_connected
+    def get_observation_with_raw(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        # Joint positions in raw ticks
+        start = time.perf_counter()
+        raw_by_name = self.bus.sync_read("Present_Position", normalize=False)
+        dt_ms = (time.perf_counter() - start) * 1e3
+        logger.debug(f"{self} read state raw: {dt_ms:.1f}ms")
+
+        # Normalize joint positions using current calibration, keep names
+        ids_values = {self.bus.motors[motor].id: val for motor, val in raw_by_name.items()}
+        norm_by_id = self.bus._normalize(ids_values)
+        norm_by_name = {self.bus._id_to_name(id_): val for id_, val in norm_by_id.items()}
+
+        # Build observation dicts with .pos suffix
+        obs_norm: dict[str, Any] = {f"{motor}.pos": val for motor, val in norm_by_name.items()}
+        obs_raw: dict[str, Any] = {f"{motor}.pos": val for motor, val in raw_by_name.items()}
+
+        # Add images only to normalized observations
+        for cam_key, cam in self.cameras.items():
+            start = time.perf_counter()
+            obs_norm[cam_key] = cam.async_read()
+            dt_ms = (time.perf_counter() - start) * 1e3
+            logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
+
+        return obs_norm, obs_raw
 
     @check_if_not_connected
     def send_action(self, action: RobotAction) -> RobotAction:

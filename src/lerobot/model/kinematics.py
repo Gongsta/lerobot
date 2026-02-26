@@ -40,6 +40,7 @@ class RobotKinematics:
                 "Please install the optional dependencies of `kinematics` in the package."
             ) from e
 
+        self.urdf_path = urdf_path
         self.robot = placo.RobotWrapper(urdf_path)
         self.solver = placo.KinematicsSolver(self.robot)
         self.solver.mask_fbase(True)  # Fix the base

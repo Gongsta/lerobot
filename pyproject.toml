@@ -253,6 +253,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
 "src/lerobot/policies/wall_x/**" = ["N801", "N812", "SIM102", "SIM108", "SIM210", "SIM211", "B006", "B007", "SIM118"] # Supprese these as they are coming from original Qwen2_5_vl code TODO(pepijn): refactor original
+"src/lerobot/utils/visualization_utils.py" = ["N802", "N803", "N806"] # Math/robotics convention: uppercase for matrices (R, T, G, etc.)
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -280,6 +281,7 @@ skips = ["B101", "B311", "B404", "B603", "B615"]
 default.extend-ignore-re = [
     "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",                      # spellchecker:disable-line
     "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on", # spellchecker:<on|off>
+    "\"id\": \"[A-Za-z0-9]+\"",                                           # Jupyter notebook cell IDs (auto-generated)
 ]
 default.extend-ignore-identifiers-re = [
     # Add individual words here to ignore them
@@ -290,7 +292,9 @@ default.extend-ignore-identifiers-re = [
     "thw",
     "inpt",
     "ROBOTIS",
-    "OT_VALUE"
+    "OT_VALUE",
+    # Jupyter notebook cell IDs (auto-generated alphanumeric strings)
+    ".*[A-Z][a-z][A-Z].*",
 ]
 
 # TODO: Uncomment when ready to use
