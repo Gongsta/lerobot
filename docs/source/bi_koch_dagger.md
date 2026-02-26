@@ -145,8 +145,7 @@ lerobot-record \
     --dataset.reset_time_s=15 \
     --intervention_repo_id=${HF_USER}/koch-tshirt-dagger-corrections \
     --policy.path=${HF_USER}/act_policy_koch-tshirt-folding-v2 \
-    --policy.device=mps \
-    --display_data=true
+    --display_data=true --teleop.inverse_follow=false
 ```
 
 To resume a previous DAgger session (adds episodes to existing datasets):
