@@ -38,6 +38,9 @@ class BiKochLeaderConfig(TeleoperatorConfig):
     left_arm_port: str
     right_arm_port: str
 
+    # Enable intervention mode (press SPACE to toggle between policy and teleop during recording)
+    intervention_enabled: bool = False
+
 
 def make_bimanual_koch_teleop_processors(
     teleop, display_data: bool
