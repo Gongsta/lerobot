@@ -18,6 +18,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+import time
+
+from lerobot.utils.visualization_utils import visualize_robot, parse_urdf_graph
 
 from lerobot.configs.types import FeatureType, PipelineFeatureType, PolicyFeature
 from lerobot.model.kinematics import RobotKinematics
@@ -27,6 +30,7 @@ from lerobot.processor import (
     ProcessorStep,
     ProcessorStepRegistry,
     RobotAction,
+    RobotObservation,
     RobotActionProcessorStep,
     RobotObservation,
     TransitionKey,
@@ -200,14 +204,16 @@ class EEBoundsAndSafety(RobotActionProcessorStep):
     end_effector_bounds: dict
     max_ee_step_m: float = 0.05
     _last_pos: np.ndarray | None = field(default=None, init=False, repr=False)
+    _last_twist: np.ndarray | None = field(default=None, init=False, repr=False)
+    prefix: str = ""
 
     def action(self, action: RobotAction) -> RobotAction:
-        x = action["ee.x"]
-        y = action["ee.y"]
-        z = action["ee.z"]
-        wx = action["ee.wx"]
-        wy = action["ee.wy"]
-        wz = action["ee.wz"]
+        x = action[f"{self.prefix}ee.x"]
+        y = action[f"{self.prefix}ee.y"]
+        z = action[f"{self.prefix}ee.z"]
+        wx = action[f"{self.prefix}ee.wx"]
+        wy = action[f"{self.prefix}ee.wy"]
+        wz = action[f"{self.prefix}ee.wz"]
         # TODO(Steven): ee.gripper_vel does not need to be bounded
 
         if None in (x, y, z, wx, wy, wz):
@@ -231,12 +237,12 @@ class EEBoundsAndSafety(RobotActionProcessorStep):
 
         self._last_pos = pos
 
-        action["ee.x"] = float(pos[0])
-        action["ee.y"] = float(pos[1])
-        action["ee.z"] = float(pos[2])
-        action["ee.wx"] = float(twist[0])
-        action["ee.wy"] = float(twist[1])
-        action["ee.wz"] = float(twist[2])
+        action[f"{self.prefix}ee.x"] = float(pos[0])
+        action[f"{self.prefix}ee.y"] = float(pos[1])
+        action[f"{self.prefix}ee.z"] = float(pos[2])
+        action[f"{self.prefix}ee.wx"] = float(twist[0])
+        action[f"{self.prefix}ee.wy"] = float(twist[1])
+        action[f"{self.prefix}ee.wz"] = float(twist[2])
         return action
 
     def reset(self):
@@ -248,6 +254,10 @@ class EEBoundsAndSafety(RobotActionProcessorStep):
     ) -> dict[PipelineFeatureType, dict[str, PolicyFeature]]:
         return features
 
+
+def angular_diff(a, b):
+    diff = (a - b + 180) % 360 - 180
+    return abs(diff)
 
 @ProcessorStepRegistry.register("inverse_kinematics_ee_to_joints")
 @dataclass
@@ -264,21 +274,47 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
         q_curr: Internal state storing the last joint positions, used as an initial guess for the IK solver.
         initial_guess_current_joints: If True, use the robot's current joint state as the IK guess.
             If False, use the solution from the previous step.
+        display_data: If True, visualize the robot in rerun.
+        entity_path_prefix: Prefix for the rerun entity path.
+        offset: Y-axis offset for visualization.
     """
 
     kinematics: RobotKinematics
     motor_names: list[str]
     q_curr: np.ndarray | None = field(default=None, init=False, repr=False)
     initial_guess_current_joints: bool = True
+    prefix: str = ""
+    threshold_deg: float = 90.0
+    display_data: bool = False
+    entity_path_prefix: str = "follower"
+    offset: float = 0.0
+    _first_solve: bool = field(default=True, init=False, repr=False)
+    _rerun_initialized: bool = field(default=False, init=False, repr=False)
+    _urdf_graph: dict | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self):
+        """Initialize rerun logging if display_data is enabled."""
+        if self.display_data and not self._rerun_initialized:
+            import rerun as rr
+            rr.log_file_from_path(
+                self.kinematics.urdf_path,
+                entity_path_prefix=self.entity_path_prefix,
+                static=True
+            )
+            # Parse URDF graph for visualization
+            self._urdf_graph = parse_urdf_graph(self.kinematics.urdf_path)
+            self._rerun_initialized = True
 
     def action(self, action: RobotAction) -> RobotAction:
-        x = action.pop("ee.x")
-        y = action.pop("ee.y")
-        z = action.pop("ee.z")
-        wx = action.pop("ee.wx")
-        wy = action.pop("ee.wy")
-        wz = action.pop("ee.wz")
-        gripper_pos = action.pop("ee.gripper_pos")
+        x = action.pop(f"{self.prefix}ee.x")
+        y = action.pop(f"{self.prefix}ee.y")
+        z = action.pop(f"{self.prefix}ee.z")
+        wx = action.pop(f"{self.prefix}ee.wx")
+        wy = action.pop(f"{self.prefix}ee.wy")
+        wz = action.pop(f"{self.prefix}ee.wz")
+        gripper_pos = action.pop(f"{self.prefix}ee.gripper_pos")
+        
+        print(f"x: {x}, y: {y}, z: {z}, wx: {wx}, wy: {wy}, wz: {wz}, gripper_pos: {gripper_pos}")
 
         if None in (x, y, z, wx, wy, wz, gripper_pos):
             raise ValueError(
@@ -290,10 +326,10 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
             raise ValueError("Joints observation is require for computing robot kinematics")
 
         q_raw = np.array(
-            [float(v) for k, v in observation.items() if isinstance(k, str) and k.endswith(".pos")],
+            [float(v) for k, v in observation.items() if isinstance(k, str) and k.endswith(".pos") and k.startswith(f"{self.prefix}")],
             dtype=float,
         )
-        if q_raw is None:
+        if q_raw is None or len(q_raw) == 0:
             raise ValueError("Joints observation is require for computing robot kinematics")
 
         if self.initial_guess_current_joints:  # Use current joints as initial guess
@@ -308,23 +344,65 @@ class InverseKinematicsEEToJoints(RobotActionProcessorStep):
         t_des[:3, 3] = [x, y, z]
 
         # Compute inverse kinematics
-        q_target = self.kinematics.inverse_kinematics(self.q_curr, t_des)
-        self.q_curr = q_target
-
-        # TODO: This is sentitive to order of motor_names = q_target mapping
-        for i, name in enumerate(self.motor_names):
-            if name != "gripper":
-                action[f"{name}.pos"] = float(q_target[i])
+        num_tries = 5 if self._first_solve else 3
+        if self._first_solve:
+            print("IK first solve, trying multiple times to get an optimal initial solution")
+            self.q_curr = q_raw
+        for attempt_no in range(num_tries): # Multiple first attempts to get a solution
+            if attempt_no > 0:
+                print(f"IK retry attempt {attempt_no} to get an optimal initial solution")
+                self.q_curr = q_raw # Reset to current joints for subsequent tries
+            # Try more for the first time
+            if self._first_solve:
+                for _ in range(num_tries):
+                    q_target = self.kinematics.inverse_kinematics(self.q_curr, t_des)
+                    self.q_curr = q_target
             else:
-                action["gripper.pos"] = float(gripper_pos)
+                q_target = self.kinematics.inverse_kinematics(self.q_curr, t_des)
+                self.q_curr = q_target
+            # TODO: This is sentitive to order of motor_names = q_target mapping
+            for i, name in enumerate(self.motor_names):
+                if "gripper" not in name:
+                    action[f"{name}.pos"] = float(q_target[i])
+                else:
+                    action[f"{name}.pos"] = float(gripper_pos)
 
+            if self.verify_solution_within_joint_limits(action, observation):
+                break
+
+        # Visualize the robot if enabled
+        if self.display_data and self._urdf_graph is not None:
+            offset = np.eye(4)
+            offset[1, 3] = self.offset
+            visualize_robot(
+                self.kinematics.robot,
+                step=int(time.time()),
+                urdf_prefix=f"{self.entity_path_prefix}/robot",
+                urdf_graph=self._urdf_graph,
+                offset=offset,
+            )
+
+        self._first_solve = False
+        if not self.verify_solution_within_joint_limits(action, observation):
+            raise ValueError("Inverse kinematics failed to find a valid solution within joint safety limits.")
         return action
+
+    def verify_solution_within_joint_limits(self, action: RobotAction, observation: RobotObservation) -> bool:
+        for motor_name in self.motor_names[:-3]: # exclude gripper and wrist roll and wrist flex
+            full_motor_name = f"{motor_name}.pos"
+            target_pos = action[full_motor_name]
+            current_pos = observation[full_motor_name]
+            if angular_diff(target_pos, current_pos) > self.threshold_deg:
+                print(f"JointSafety: commanded {full_motor_name} is too large, likely issue with your IK solution: target:{target_pos}, current:{current_pos}, threshold: {self.threshold_deg}")
+                return False
+        return True
+
 
     def transform_features(
         self, features: dict[PipelineFeatureType, dict[str, PolicyFeature]]
     ) -> dict[PipelineFeatureType, dict[str, PolicyFeature]]:
         for feat in ["x", "y", "z", "wx", "wy", "wz", "gripper_pos"]:
-            features[PipelineFeatureType.ACTION].pop(f"ee.{feat}", None)
+            features[PipelineFeatureType.ACTION].pop(f"{self.prefix}ee.{feat}", None)
 
         for name in self.motor_names:
             features[PipelineFeatureType.ACTION][f"{name}.pos"] = PolicyFeature(
@@ -402,7 +480,7 @@ class GripperVelocityToJoint(RobotActionProcessorStep):
 
 
 def compute_forward_kinematics_joints_to_ee(
-    joints: dict[str, Any], kinematics: RobotKinematics, motor_names: list[str]
+    joints: dict[str, Any], kinematics: RobotKinematics, motor_names: list[str], gripper_name: str
 ) -> dict[str, Any]:
     motor_joint_values = [joints[f"{n}.pos"] for n in motor_names]
 
@@ -410,16 +488,22 @@ def compute_forward_kinematics_joints_to_ee(
     t = kinematics.forward_kinematics(q)
     pos = t[:3, 3]
     tw = Rotation.from_matrix(t[:3, :3]).as_rotvec()
-    gripper_pos = joints["gripper.pos"]
+    gripper_pos = joints[f"{gripper_name}.pos"]
     for n in motor_names:
         joints.pop(f"{n}.pos")
-    joints["ee.x"] = float(pos[0])
-    joints["ee.y"] = float(pos[1])
-    joints["ee.z"] = float(pos[2])
-    joints["ee.wx"] = float(tw[0])
-    joints["ee.wy"] = float(tw[1])
-    joints["ee.wz"] = float(tw[2])
-    joints["ee.gripper_pos"] = float(gripper_pos)
+    if "left_" in motor_names[0]:
+        prefix = "left_"
+    elif "right_" in motor_names[0]:
+        prefix = "right_"
+    else:
+        prefix = ""
+    joints[f"{prefix}ee.x"] = float(pos[0])
+    joints[f"{prefix}ee.y"] = float(pos[1])
+    joints[f"{prefix}ee.z"] = float(pos[2])
+    joints[f"{prefix}ee.wx"] = float(tw[0])
+    joints[f"{prefix}ee.wy"] = float(tw[1])
+    joints[f"{prefix}ee.wz"] = float(tw[2])
+    joints[f"{prefix}ee.gripper_pos"] = float(gripper_pos)
     return joints
 
 
@@ -438,9 +522,10 @@ class ForwardKinematicsJointsToEEObservation(ObservationProcessorStep):
 
     kinematics: RobotKinematics
     motor_names: list[str]
+    gripper_name: str
 
     def observation(self, observation: RobotObservation) -> RobotObservation:
-        return compute_forward_kinematics_joints_to_ee(observation, self.kinematics, self.motor_names)
+        return compute_forward_kinematics_joints_to_ee(observation, self.kinematics, self.motor_names, self.gripper_name)
 
     def transform_features(
         self, features: dict[PipelineFeatureType, dict[str, PolicyFeature]]
@@ -448,9 +533,16 @@ class ForwardKinematicsJointsToEEObservation(ObservationProcessorStep):
         # We only use the ee pose in the dataset, so we don't need the joint positions
         for n in self.motor_names:
             features[PipelineFeatureType.OBSERVATION].pop(f"{n}.pos", None)
+        # Preserve the prefix
+        if "left_" in self.motor_names[0]:
+            prefix = "left_"
+        elif "right_" in self.motor_names[0]:
+            prefix = "right_"
+        else:
+            prefix = ""
         # We specify the dataset features of this step that we want to be stored in the dataset
         for k in ["x", "y", "z", "wx", "wy", "wz", "gripper_pos"]:
-            features[PipelineFeatureType.OBSERVATION][f"ee.{k}"] = PolicyFeature(
+            features[PipelineFeatureType.OBSERVATION][f"{prefix}ee.{k}"] = PolicyFeature(
                 type=FeatureType.STATE, shape=(1,)
             )
         return features
@@ -467,13 +559,51 @@ class ForwardKinematicsJointsToEEAction(RobotActionProcessorStep):
 
     Attributes:
         kinematics: The robot's kinematic model.
+        motor_names: A list of motor names for which to compute joint positions.
+        gripper_name: Name of the gripper motor.
+        display_data: If True, visualize the robot in rerun.
+        entity_path_prefix: Prefix for the rerun entity path.
+        offset: Y-axis offset for visualization.
     """
 
     kinematics: RobotKinematics
     motor_names: list[str]
+    gripper_name: str
+    display_data: bool = False
+    entity_path_prefix: str = "follower"
+    offset: float = 0.0
+    _rerun_initialized: bool = field(default=False, init=False, repr=False)
+    _urdf_graph: dict | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self):
+        """Initialize rerun logging if display_data is enabled."""
+        if self.display_data and not self._rerun_initialized:
+            import rerun as rr
+            rr.log_file_from_path(
+                self.kinematics.urdf_path,
+                entity_path_prefix=self.entity_path_prefix,
+                static=True
+            )
+            # Parse URDF graph for visualization
+            self._urdf_graph = parse_urdf_graph(self.kinematics.urdf_path)
+            self._rerun_initialized = True
 
     def action(self, action: RobotAction) -> RobotAction:
-        return compute_forward_kinematics_joints_to_ee(action, self.kinematics, self.motor_names)
+        result = compute_forward_kinematics_joints_to_ee(action, self.kinematics, self.motor_names, self.gripper_name)
+
+        # Visualize the robot if enabled
+        if self.display_data and self._urdf_graph is not None:
+            offset_matrix = np.eye(4)
+            offset_matrix[1, 3] = self.offset
+            visualize_robot(
+                self.kinematics.robot,
+                step=int(time.time()),
+                urdf_prefix=f"{self.entity_path_prefix}/robot",
+                urdf_graph=self._urdf_graph,
+                offset=offset_matrix,
+            )
+
+        return result
 
     def transform_features(
         self, features: dict[PipelineFeatureType, dict[str, PolicyFeature]]
@@ -481,9 +611,16 @@ class ForwardKinematicsJointsToEEAction(RobotActionProcessorStep):
         # We only use the ee pose in the dataset, so we don't need the joint positions
         for n in self.motor_names:
             features[PipelineFeatureType.ACTION].pop(f"{n}.pos", None)
+        # Preserve the prefix
+        if "left_" in self.motor_names[0]:
+            prefix = "left_"
+        elif "right_" in self.motor_names[0]:
+            prefix = "right_"
+        else:
+            prefix = ""
         # We specify the dataset features of this step that we want to be stored in the dataset
         for k in ["x", "y", "z", "wx", "wy", "wz", "gripper_pos"]:
-            features[PipelineFeatureType.ACTION][f"ee.{k}"] = PolicyFeature(
+            features[PipelineFeatureType.ACTION][f"{prefix}ee.{k}"] = PolicyFeature(
                 type=FeatureType.STATE, shape=(1,)
             )
         return features
@@ -494,29 +631,38 @@ class ForwardKinematicsJointsToEEAction(RobotActionProcessorStep):
 class ForwardKinematicsJointsToEE(ProcessorStep):
     kinematics: RobotKinematics
     motor_names: list[str]
+    gripper_name: str
+    display_data: bool = False
+    entity_path_prefix: str = "follower"
+    offset: float = 0.0
 
     def __post_init__(self):
         self.joints_to_ee_action_processor = ForwardKinematicsJointsToEEAction(
-            kinematics=self.kinematics, motor_names=self.motor_names
+            kinematics=self.kinematics,
+            motor_names=self.motor_names,
+            gripper_name=self.gripper_name,
+            display_data=self.display_data,
+            entity_path_prefix=self.entity_path_prefix,
+            offset=self.offset,
         )
-        self.joints_to_ee_observation_processor = ForwardKinematicsJointsToEEObservation(
-            kinematics=self.kinematics, motor_names=self.motor_names
-        )
+        # self.joints_to_ee_observation_processor = ForwardKinematicsJointsToEEObservation(
+        #     kinematics=self.kinematics, motor_names=self.motor_names, gripper_name=self.gripper_name
+        # )
 
     def __call__(self, transition: EnvTransition) -> EnvTransition:
-        if transition.get(TransitionKey.ACTION) is not None:
-            transition = self.joints_to_ee_action_processor(transition)
-        if transition.get(TransitionKey.OBSERVATION) is not None:
-            transition = self.joints_to_ee_observation_processor(transition)
+        # if transition.get(TransitionKey.ACTION) is not None and len(transition.get(TransitionKey.ACTION)) > 0:
+        transition = self.joints_to_ee_action_processor(transition)
+        # if transition.get(TransitionKey.OBSERVATION) is not None and len(transition.get(TransitionKey.OBSERVATION)) > 0:
+        #     transition = self.joints_to_ee_observation_processor(transition)
         return transition
 
     def transform_features(
         self, features: dict[PipelineFeatureType, dict[str, PolicyFeature]]
     ) -> dict[PipelineFeatureType, dict[str, PolicyFeature]]:
-        if features[PipelineFeatureType.ACTION] is not None:
-            features = self.joints_to_ee_action_processor.transform_features(features)
-        if features[PipelineFeatureType.OBSERVATION] is not None:
-            features = self.joints_to_ee_observation_processor.transform_features(features)
+        # if features[PipelineFeatureType.ACTION] is not None and len(features[PipelineFeatureType.ACTION]) > 0:
+        features = self.joints_to_ee_action_processor.transform_features(features)
+        # if features[PipelineFeatureType.OBSERVATION] is not None and len(features[PipelineFeatureType.OBSERVATION]) > 0:
+        #     features = self.joints_to_ee_observation_processor.transform_features(features)
         return features
 
 
